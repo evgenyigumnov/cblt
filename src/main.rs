@@ -198,7 +198,6 @@ struct Config {
 struct HostConfig {
     root: String,
     pattern: String,
-    file_server: bool,
 }
 
 fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
@@ -214,7 +213,6 @@ fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
         let hostname = node.name().value().to_string();
         let mut root = String::new();
         let mut pattern = String::new();
-        let mut file_server = false;
 
         if let Some(children) = node.children() {
             for child_node in children.nodes() {
@@ -232,8 +230,6 @@ fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
                     } else {
                         return Err(format!("No root path specified for host {}", hostname).into());
                     }
-                } else if child_name == "file_server" {
-                    file_server = true;
                 }
             }
         }
@@ -242,7 +238,7 @@ fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
             return Err(format!("No root specified for host {}", hostname).into());
         }
 
-        hosts.insert(hostname, HostConfig { root, pattern, file_server });
+        hosts.insert(hostname, HostConfig { root, pattern});
     }
 
     Ok(Config { hosts })
