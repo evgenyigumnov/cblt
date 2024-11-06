@@ -8,7 +8,9 @@ use std::str;
 use log::{debug, info};
 use std::sync::Arc;
 use kdl::KdlDocument;
-use crate::config::build_config;
+use crate::config::{build_config, Directive};
+use bytes::Bytes;
+use reqwest;
 
 mod config;
 
@@ -30,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let config = Arc::clone(&config);
 
         tokio::spawn(async move {
-                let mut buf = [0; 1024];
+            let mut buf = [0; 4096];
 
             match socket.read(&mut buf).await {
                 Ok(n) => {
@@ -47,9 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     };
 
                     let request = match parse_request(req_str) {
-                        Some(req) => {
-                            req
-                        },
+                        Some(req) => req,
                         None => {
                             let response = Response::builder()
                                 .status(StatusCode::BAD_REQUEST)
@@ -65,6 +65,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         None => "",
                     };
 
+                    let req_opt = Some(&request);
+
                     let host_config = match config.hosts.get(host) {
                         Some(cfg) => cfg,
                         None => {
@@ -72,38 +74,126 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 .status(StatusCode::FORBIDDEN)
                                 .body(Vec::new())
                                 .unwrap();
-                            let _ = send_response(&mut socket, response, Some(request)).await;
+                            let _ = send_response(&mut socket, response, req_opt).await;
                             return;
                         }
                     };
 
-                    // Construct the path to the requested resource
-                    let mut path = host_config.root.clone();
-                    path.push_str(request.uri().path());
+                    let mut root_path = None;
+                    let mut handled = false;
 
-                    let path = if Path::new(&path).is_dir() {
-                        format!("{}/index.html", path)
-                    } else {
-                        path
-                    };
+                    for directive in &host_config.directives {
+                        match directive {
+                            Directive::Root { pattern, path } => {
+                                if matches_pattern(pattern, request.uri().path()) {
+                                    root_path = Some(path.clone());
+                                }
+                            }
+                            Directive::FileServer => {
+                                if let Some(root) = &root_path {
+                                    let mut file_path = root.clone();
+                                    file_path.push_str(request.uri().path());
 
-                    // Serve the file
-                    match fs::read(&path).await {
-                        Ok(contents) => {
-                            let response = Response::builder()
-                                .status(StatusCode::OK)
-                                .header("Content-Length", contents.len())
-                                .body(contents)
-                                .unwrap();
-                            let _ = send_response(&mut socket, response, Some(request)).await;
+                                    let file_path = if Path::new(&file_path).is_dir() {
+                                        format!("{}/index.html", file_path)
+                                    } else {
+                                        file_path
+                                    };
+
+                                    match fs::read(&file_path).await {
+                                        Ok(contents) => {
+                                            let response = Response::builder()
+                                                .status(StatusCode::OK)
+                                                .header("Content-Length", contents.len())
+                                                .body(contents)
+                                                .unwrap();
+                                            let _ = send_response(&mut socket, response, req_opt).await;
+                                            handled = true;
+                                            break;
+                                        }
+                                        Err(_) => {
+                                            let response = Response::builder()
+                                                .status(StatusCode::NOT_FOUND)
+                                                .body(Vec::new())
+                                                .unwrap();
+                                            let _ = send_response(&mut socket, response, req_opt).await;
+                                            handled = true;
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    let response = Response::builder()
+                                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                        .body(Vec::new())
+                                        .unwrap();
+                                    let _ = send_response(&mut socket, response, req_opt).await;
+                                    handled = true;
+                                    break;
+                                }
+                            }
+                            Directive::ReverseProxy { pattern, destination } => {
+                                if matches_pattern(pattern, request.uri().path()) {
+                                    let dest_uri = format!("{}{}", destination, request.uri().path());
+
+                                    let client = reqwest::Client::new();
+                                    let mut req_builder = client.request(
+                                        request.method().clone(),
+                                        &dest_uri,
+                                    );
+
+                                    for (key, value) in request.headers().iter() {
+                                        req_builder = req_builder.header(key, value);
+                                    }
+
+                                    match req_builder.send().await {
+                                        Ok(resp) => {
+                                            let status = resp.status();
+                                            let headers = resp.headers().clone();
+                                            let body = resp.bytes().await.unwrap_or_else(|_| Bytes::new());
+
+                                            let mut response_builder = Response::builder().status(status);
+
+                                            for (key, value) in headers.iter() {
+                                                response_builder = response_builder.header(key, value);
+                                            }
+
+                                            let response = response_builder.body(body.to_vec()).unwrap();
+                                            let _ = send_response(&mut socket, response, req_opt).await;
+                                            handled = true;
+                                            break;
+                                        }
+                                        Err(_) => {
+                                            let response = Response::builder()
+                                                .status(StatusCode::BAD_GATEWAY)
+                                                .body(Vec::new())
+                                                .unwrap();
+                                            let _ = send_response(&mut socket, response, req_opt).await;
+                                            handled = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            Directive::Redir { destination } => {
+                                let dest = destination.replace("{uri}", request.uri().path());
+                                let response = Response::builder()
+                                    .status(StatusCode::FOUND)
+                                    .header("Location", dest)
+                                    .body(Vec::new())
+                                    .unwrap();
+                                let _ = send_response(&mut socket, response, req_opt).await;
+                                handled = true;
+                                break;
+                            }
                         }
-                        Err(_) => {
-                            let response = Response::builder()
-                                .status(StatusCode::NOT_FOUND)
-                                .body(Vec::new())
-                                .unwrap();
-                            let _ = send_response(&mut socket, response, Some(request)).await;
-                        }
+                    }
+
+                    if !handled {
+                        let response = Response::builder()
+                            .status(StatusCode::NOT_FOUND)
+                            .body(Vec::new())
+                            .unwrap();
+                        let _ = send_response(&mut socket, response, req_opt).await;
                     }
                 }
                 Err(_) => return,
@@ -112,7 +202,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<Request<()>>) -> Result<(), Box<dyn Error>> {
+async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
     match req_opt {
         None => {
             match response.status() {
@@ -135,8 +225,6 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
             } else {
                 info!("Request: {} {} {}", req.method(), req.uri(), response.status().as_u16());
             }
-
-
         }
     }
 
@@ -193,3 +281,13 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
     builder.body(()).ok()
 }
 
+fn matches_pattern(pattern: &str, path: &str) -> bool {
+    if pattern == "*" {
+        true
+    } else if pattern.ends_with("*") {
+        let prefix = &pattern[..pattern.len() - 1];
+        path.starts_with(prefix)
+    } else {
+        pattern == path
+    }
+}
