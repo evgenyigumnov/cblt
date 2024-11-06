@@ -92,12 +92,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
+                Err(_) => return,
             }
         });
     }
 }
 
 async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>) -> Result<(), Box<dyn Error>> {
+    debug!("Response: {}", response.status());
     let mut resp_bytes = Vec::new();
     let (parts, body) = response.into_parts();
 
