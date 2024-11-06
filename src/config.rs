@@ -106,7 +106,7 @@ example.com {
             "#;
         let doc: KdlDocument = cblt_file.parse()?;
         let config = build_config(&doc)?;
-        println!("{:?}", config);
+        println!("{:#?}", config);
 
 
         Ok(())
@@ -129,7 +129,7 @@ example1.com {
             "#;
         let doc: KdlDocument = cblt_file.parse()?;
         let config = build_config(&doc)?;
-        println!("{:?}", config);
+        println!("{:#?}", config);
 
 
         Ok(())

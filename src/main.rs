@@ -85,11 +85,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     for directive in &host_config.directives {
                         match directive {
                             Directive::Root { pattern, path } => {
+                                debug!("Root: {} -> {}", pattern, path);
                                 if matches_pattern(pattern, request.uri().path()) {
                                     root_path = Some(path.clone());
                                 }
                             }
                             Directive::FileServer => {
+                                debug!("File server");
                                 if let Some(root) = &root_path {
                                     let mut file_path = root.clone();
                                     file_path.push_str(request.uri().path());
@@ -132,6 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
                             Directive::ReverseProxy { pattern, destination } => {
+                                debug!("Reverse proxy: {} -> {}", pattern, destination);
                                 if matches_pattern(pattern, request.uri().path()) {
                                     let dest_uri = format!("{}{}", destination, request.uri().path());
 
