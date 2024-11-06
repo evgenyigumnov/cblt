@@ -1,5 +1,5 @@
 example.com {
     root "*" "."
     file_server
-    reverse_proxy "/api/*" "localhost:8080"
+    reverse_proxy "/api/*" "http://46.101.176.4:80"
 }

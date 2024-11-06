@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use kdl::KdlDocument;
+use log::debug;
 
 #[derive(Debug)]
 pub struct Config {
@@ -78,7 +79,9 @@ pub fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
         hosts.insert(hostname, HostConfig { directives });
     }
 
-    Ok(Config { hosts })
+    let ret = Config { hosts };
+    debug!("{:#?}", ret);
+    Ok(ret)
 }
 
 fn get_string_args<'a>(node: &'a kdl::KdlNode) -> Vec<&'a str> {

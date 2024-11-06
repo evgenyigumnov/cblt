@@ -39,10 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let req_str = match str::from_utf8(&buf[..n]) {
                         Ok(v) => v,
                         Err(_) => {
-                            let response = Response::builder()
-                                .status(StatusCode::BAD_REQUEST)
-                                .body(Vec::new())
-                                .unwrap();
+                            let response = error_response(StatusCode::BAD_REQUEST);
                             let _ = send_response(&mut socket, response, None).await;
                             return;
                         }
@@ -51,10 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let request = match parse_request(req_str) {
                         Some(req) => req,
                         None => {
-                            let response = Response::builder()
-                                .status(StatusCode::BAD_REQUEST)
-                                .body(Vec::new())
-                                .unwrap();
+                            let response = error_response(StatusCode::BAD_REQUEST);
                             let _ = send_response(&mut socket, response, None).await;
                             return;
                         }
@@ -70,10 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     let host_config = match config.hosts.get(host) {
                         Some(cfg) => cfg,
                         None => {
-                            let response = Response::builder()
-                                .status(StatusCode::FORBIDDEN)
-                                .body(Vec::new())
-                                .unwrap();
+                            let response = error_response(StatusCode::FORBIDDEN);
                             let _ = send_response(&mut socket, response, req_opt).await;
                             return;
                         }
@@ -114,20 +105,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             break;
                                         }
                                         Err(_) => {
-                                            let response = Response::builder()
-                                                .status(StatusCode::NOT_FOUND)
-                                                .body(Vec::new())
-                                                .unwrap();
-                                            let _ = send_response(&mut socket, response, req_opt).await;
-                                            handled = true;
-                                            break;
+                                            continue;
                                         }
                                     }
                                 } else {
-                                    let response = Response::builder()
-                                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                        .body(Vec::new())
-                                        .unwrap();
+
+                                    let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
                                     let _ = send_response(&mut socket, response, req_opt).await;
                                     handled = true;
                                     break;
@@ -137,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 debug!("Reverse proxy: {} -> {}", pattern, destination);
                                 if matches_pattern(pattern, request.uri().path()) {
                                     let dest_uri = format!("{}{}", destination, request.uri().path());
-
+                                    debug!("Destination URI: {}", dest_uri);
                                     let client = reqwest::Client::new();
                                     let mut req_builder = client.request(
                                         request.method().clone(),
@@ -166,10 +149,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             break;
                                         }
                                         Err(_) => {
-                                            let response = Response::builder()
-                                                .status(StatusCode::BAD_GATEWAY)
-                                                .body(Vec::new())
-                                                .unwrap();
+                                            let response = error_response(StatusCode::BAD_GATEWAY);
                                             let _ = send_response(&mut socket, response, req_opt).await;
                                             handled = true;
                                             break;
@@ -181,8 +161,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let dest = destination.replace("{uri}", request.uri().path());
                                 let response = Response::builder()
                                     .status(StatusCode::FOUND)
-                                    .header("Location", dest)
-                                    .body(Vec::new())
+                                    .header("Location", &dest)
+                                    .body(dest.as_bytes().to_vec())
                                     .unwrap();
                                 let _ = send_response(&mut socket, response, req_opt).await;
                                 handled = true;
@@ -192,10 +172,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     if !handled {
-                        let response = Response::builder()
-                            .status(StatusCode::NOT_FOUND)
-                            .body(Vec::new())
-                            .unwrap();
+                        let response = error_response(StatusCode::NOT_FOUND);
                         let _ = send_response(&mut socket, response, req_opt).await;
                     }
                 }
@@ -206,31 +183,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
-    match req_opt {
-        None => {
-            match response.status() {
-                StatusCode::BAD_REQUEST => {
-                    info!("Bad request");
-                }
-                StatusCode::FORBIDDEN => {
-                    info!("Forbidden");
-                }
-                StatusCode::NOT_FOUND => {
-                    info!("Not found");
-                }
-                _ => {}
-            }
+    if let Some(req) = req_opt {
+        debug!("{:?}", req);
+        if let Some(host_header) = req.headers().get("Host") {
+            info!("Request: {} {} {} {}", req.method(), req.uri(), host_header.to_str().unwrap_or(""), response.status().as_u16());
+        } else {
+            info!("Request: {} {} {}", req.method(), req.uri(), response.status().as_u16());
         }
-        Some(req) => {
-            debug!("{:?}", req);
-            if let Some(host_header) = req.headers().get("Host") {
-                info!("Request: {} {} {} {}", req.method(), req.uri(), host_header.to_str().unwrap_or(""), response.status().as_u16());
-            } else {
-                info!("Request: {} {} {}", req.method(), req.uri(), response.status().as_u16());
-            }
-        }
+    } else {
+        info!("Response: {}", response.status().as_u16());
     }
-
     let mut resp_bytes = Vec::new();
     let (parts, body) = response.into_parts();
 
@@ -284,6 +246,29 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
     builder.body(()).ok()
 }
 
+
+fn error_response(status: StatusCode) -> Response<Vec<u8>> {
+
+    let msg = match status {
+        StatusCode::BAD_REQUEST => {
+            "Bad request"
+        }
+        StatusCode::FORBIDDEN => {
+            "Forbidden"
+        }
+        StatusCode::NOT_FOUND => {
+            "Not found"
+        }
+        _ => {
+            "Unknown error"
+        }
+    };
+
+    Response::builder()
+        .status(StatusCode::FORBIDDEN)
+        .body(str::as_bytes(msg).to_vec())
+        .unwrap()
+}
 fn matches_pattern(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         true
