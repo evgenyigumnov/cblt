@@ -1,4 +1,4 @@
 example.com {
-    root "."
+    root "*" "."
     file_server
 }

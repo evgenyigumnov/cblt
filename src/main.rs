@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let config = Arc::clone(&config);
 
         tokio::spawn(async move {
-            let mut buf = [0; 1024];
+                let mut buf = [0; 1024];
 
             match socket.read(&mut buf).await {
                 Ok(n) => {
@@ -197,15 +197,23 @@ struct Config {
 
 struct HostConfig {
     root: String,
+    pattern: String,
     file_server: bool,
 }
 
 fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
+    // example.com {
+    //     root * "."
+    //     file_server
+    // }
+
+
     let mut hosts = HashMap::new();
 
     for node in doc.nodes() {
         let hostname = node.name().value().to_string();
         let mut root = String::new();
+        let mut pattern = String::new();
         let mut file_server = false;
 
         if let Some(children) = node.children() {
@@ -220,6 +228,7 @@ fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
                         .collect::<Vec<&str>>();
                     if !args.is_empty() {
                         root = args[args.len() - 1].to_string();
+                        pattern = args[args.len() - 2].to_string();
                     } else {
                         return Err(format!("No root path specified for host {}", hostname).into());
                     }
@@ -233,7 +242,7 @@ fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
             return Err(format!("No root specified for host {}", hostname).into());
         }
 
-        hosts.insert(hostname, HostConfig { root, file_server });
+        hosts.insert(hostname, HostConfig { root, pattern, file_server });
     }
 
     Ok(Config { hosts })
