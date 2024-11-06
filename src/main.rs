@@ -6,18 +6,26 @@ use std::path::Path;
 use tokio::fs;
 use std::str;
 use log::{debug, info};
+use std::collections::HashMap;
+use std::sync::Arc;
+use kdl::KdlDocument;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("trace")).try_init();
 
+    info!("Cblt started");
 
-    info!("cblt started");
+    // Read configuration from Cbltfile
+    let cbltfile_content = fs::read_to_string("Cbltfile").await?;
+    let doc: KdlDocument = cbltfile_content.parse()?;
+    let config = Arc::new(build_config(&doc)?);
 
     let listener = TcpListener::bind("0.0.0.0:80").await?;
 
     loop {
         let (mut socket, _) = listener.accept().await?;
+        let config = Arc::clone(&config);
 
         tokio::spawn(async move {
             let mut buf = [0; 1024];
@@ -31,41 +39,44 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 .status(StatusCode::BAD_REQUEST)
                                 .body(Vec::new())
                                 .unwrap();
-                            let _ = send_response(&mut socket, response).await;
+                            let _ = send_response(&mut socket, response, None).await;
                             return;
                         }
                     };
 
                     let request = match parse_request(req_str) {
                         Some(req) => {
-                            debug!("{:?}", req);
-                            info!("Request: {} {} {}", req.method(), req.uri(), req.headers().get("Host").unwrap().to_str().unwrap());
                             req
                         },
                         None => {
-                            info!("Bad request");
                             let response = Response::builder()
                                 .status(StatusCode::BAD_REQUEST)
                                 .body(Vec::new())
                                 .unwrap();
-                            let _ = send_response(&mut socket, response).await;
+                            let _ = send_response(&mut socket, response, None).await;
                             return;
                         }
                     };
 
-                    let host = request.headers().get("host").unwrap().to_str().unwrap();
-                    if host != "example.com" {
-                        let response = Response::builder()
-                            .status(StatusCode::FORBIDDEN)
-                            .body(Vec::new())
-                            .unwrap();
+                    let host = match request.headers().get("Host") {
+                        Some(h) => h.to_str().unwrap_or(""),
+                        None => "",
+                    };
 
-                        info!("Forbidden request");
-                        let _ = send_response(&mut socket, response).await;
-                        return;
-                    }
+                    let host_config = match config.hosts.get(host) {
+                        Some(cfg) => cfg,
+                        None => {
+                            let response = Response::builder()
+                                .status(StatusCode::FORBIDDEN)
+                                .body(Vec::new())
+                                .unwrap();
+                            let _ = send_response(&mut socket, response, Some(request)).await;
+                            return;
+                        }
+                    };
 
-                    let mut path = ".".to_string();
+                    // Construct the path to the requested resource
+                    let mut path = host_config.root.clone();
                     path.push_str(request.uri().path());
 
                     let path = if Path::new(&path).is_dir() {
@@ -74,6 +85,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         path
                     };
 
+                    // Serve the file
                     match fs::read(&path).await {
                         Ok(contents) => {
                             let response = Response::builder()
@@ -81,14 +93,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 .header("Content-Length", contents.len())
                                 .body(contents)
                                 .unwrap();
-                            let _ = send_response(&mut socket, response).await;
+                            let _ = send_response(&mut socket, response, Some(request)).await;
                         }
                         Err(_) => {
                             let response = Response::builder()
                                 .status(StatusCode::NOT_FOUND)
                                 .body(Vec::new())
                                 .unwrap();
-                            let _ = send_response(&mut socket, response).await;
+                            let _ = send_response(&mut socket, response, Some(request)).await;
                         }
                     }
                 }
@@ -98,8 +110,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>) -> Result<(), Box<dyn Error>> {
-    debug!("Response: {}", response.status());
+async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<Request<()>>) -> Result<(), Box<dyn Error>> {
+    match req_opt {
+        None => {
+            match response.status() {
+                StatusCode::BAD_REQUEST => {
+                    info!("Bad request");
+                }
+                StatusCode::FORBIDDEN => {
+                    info!("Forbidden");
+                }
+                StatusCode::NOT_FOUND => {
+                    info!("Not found");
+                }
+                _ => {}
+            }
+        }
+        Some(req) => {
+            debug!("{:?}", req);
+            if let Some(host_header) = req.headers().get("Host") {
+                info!("Request: {} {} {} {}", req.method(), req.uri(), host_header.to_str().unwrap_or(""), response.status().as_u16());
+            } else {
+                info!("Request: {} {} {}", req.method(), req.uri(), response.status().as_u16());
+            }
+
+
+        }
+    }
+
     let mut resp_bytes = Vec::new();
     let (parts, body) = response.into_parts();
 
@@ -114,6 +152,7 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
     resp_bytes.extend_from_slice(&body);
 
     socket.write_all(&resp_bytes).await?;
+
     Ok(())
 }
 
@@ -150,4 +189,52 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
     }
 
     builder.body(()).ok()
+}
+
+struct Config {
+    hosts: HashMap<String, HostConfig>,
+}
+
+struct HostConfig {
+    root: String,
+    file_server: bool,
+}
+
+fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
+    let mut hosts = HashMap::new();
+
+    for node in doc.nodes() {
+        let hostname = node.name().value().to_string();
+        let mut root = String::new();
+        let mut file_server = false;
+
+        if let Some(children) = node.children() {
+            for child_node in children.nodes() {
+                let child_name = child_node.name().value();
+
+                if child_name == "root" {
+                    let args = child_node
+                        .entries()
+                        .iter()
+                        .filter_map(|e| e.value().as_string())
+                        .collect::<Vec<&str>>();
+                    if !args.is_empty() {
+                        root = args[args.len() - 1].to_string();
+                    } else {
+                        return Err(format!("No root path specified for host {}", hostname).into());
+                    }
+                } else if child_name == "file_server" {
+                    file_server = true;
+                }
+            }
+        }
+
+        if root.is_empty() {
+            return Err(format!("No root specified for host {}", hostname).into());
+        }
+
+        hosts.insert(hostname, HostConfig { root, file_server });
+    }
+
+    Ok(Config { hosts })
 }
