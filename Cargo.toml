@@ -1,0 +1,16 @@
+[package]
+name = "cblt"
+version = "1.0.0"
+edition = "2021"
+
+authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
+
+[[bin]]
+name = "cblt"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.41.0", features = ["full"] }
+http = "1.1.0"
+env_logger = "0.11.5"
+log = "0.4.22"
