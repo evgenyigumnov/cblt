@@ -2,7 +2,7 @@ use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use http::{Request, Response, StatusCode};
 use std::error::Error;
-use std::path::Path;
+use std::path::{PathBuf};
 use tokio::fs;
 use std::str;
 use log::{debug, info};
@@ -84,14 +84,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             Directive::FileServer => {
                                 debug!("File server");
                                 if let Some(root) = &root_path {
-                                    let mut file_path = root.clone();
-                                    file_path.push_str(request.uri().path());
+                                    let mut file_path = PathBuf::from(root);
+                                    file_path.push(request.uri().path().trim_start_matches('/'));
 
-                                    let file_path = if Path::new(&file_path).is_dir() {
-                                        format!("{}/index.html", file_path)
-                                    } else {
-                                        file_path
-                                    };
+                                    if file_path.is_dir() {
+                                        file_path.push("index.html");
+                                    }
 
                                     match fs::read(&file_path).await {
                                         Ok(contents) => {
@@ -112,7 +110,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         }
                                     }
                                 } else {
-
                                     let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
                                     let _ = send_response(&mut socket, response, req_opt).await;
                                     handled = true;
