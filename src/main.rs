@@ -217,14 +217,16 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
 fn parse_request(req_str: &str) -> Option<Request<()>> {
     let mut lines = req_str.lines();
 
-    let request_line = lines.next()?.split_whitespace().collect::<Vec<&str>>();
-    if request_line.len() != 3 {
+    // Parse the request line
+    let mut request_line_parts = lines.next()?.split_whitespace();
+    let method = request_line_parts.next()?;
+    let uri = request_line_parts.next()?;
+    let version_str = request_line_parts.next()?;
+    if request_line_parts.next().is_some() {
         return None;
     }
 
-    let method = request_line[0];
-    let uri = request_line[1];
-    let version = match request_line[2] {
+    let version = match version_str {
         "HTTP/1.1" => http::Version::HTTP_11,
         "HTTP/1.0" => http::Version::HTTP_10,
         _ => return None,
@@ -235,19 +237,20 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
         .uri(uri)
         .version(version);
 
+    // Parse headers
     for line in lines {
         if line.is_empty() {
             break;
         }
-        let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
-        if parts.len() != 2 {
-            return None;
-        }
-        builder = builder.header(parts[0], parts[1]);
+        let mut header_parts = line.splitn(2, ": ");
+        let key = header_parts.next()?;
+        let value = header_parts.next()?;
+        builder = builder.header(key, value);
     }
 
     builder.body(()).ok()
 }
+
 
 
 fn error_response(status: StatusCode) -> Response<Vec<u8>> {
