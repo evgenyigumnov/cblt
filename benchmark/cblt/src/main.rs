@@ -1,9 +1,9 @@
 use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use http::{Request, Response, StatusCode};
 use std::error::Error;
 use std::path::{PathBuf};
-use tokio::fs;
+use tokio::{fs, io};
 use std::str;
 use log::{debug, info};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use kdl::KdlDocument;
 use crate::config::{build_config, Directive};
 use bytes::Bytes;
 use reqwest;
+use tokio::fs::File;
 
 mod config;
 
@@ -91,14 +92,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         file_path.push("index.html");
                                     }
 
-                                    match fs::read(&file_path).await {
-                                        Ok(contents) => {
+                                    match File::open(&file_path).await {
+                                        Ok(file) => {
+                                            let metadata = file.metadata().await.unwrap();
+                                            let content_length = metadata.len();
+
                                             let response = Response::builder()
                                                 .status(StatusCode::OK)
-                                                .header("Content-Length", contents.len())
-                                                .body(contents)
+                                                .header("Content-Length", content_length)
+                                                .body(file)
                                                 .unwrap();
-                                            let _ = send_response(&mut socket, response, req_opt).await;
+
+                                            let _ = send_response_file(&mut socket, response, req_opt).await;
                                             handled = true;
                                             break;
                                         }
@@ -180,6 +185,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         });
     }
+}
+
+
+async fn send_response_file(
+    socket: &mut tokio::net::TcpStream,
+    response: Response<impl AsyncReadExt + Unpin>,
+    req_opt: Option<&Request<()>>
+) -> Result<(), Box<dyn Error>> {
+    if let Some(req) = req_opt {
+        debug!("{:?}", req);
+        if let Some(host_header) = req.headers().get("Host") {
+            info!(
+                "Request: {} {} {} {}",
+                req.method(),
+                req.uri(),
+                host_header.to_str().unwrap_or(""),
+                response.status().as_u16()
+            );
+        } else {
+            info!(
+                "Request: {} {} {}",
+                req.method(),
+                req.uri(),
+                response.status().as_u16()
+            );
+        }
+    } else {
+        info!("Response: {}", response.status().as_u16());
+    }
+    let (parts, mut body) = response.into_parts();
+
+    // Build and send headers
+    let mut headers = Vec::with_capacity(128);
+    let status_line = format!(
+        "HTTP/1.1 {} {}\r\n",
+        parts.status.as_u16(),
+        parts.status.canonical_reason().unwrap_or("")
+    );
+    headers.extend_from_slice(status_line.as_bytes());
+
+    for (key, value) in parts.headers.iter() {
+        headers.extend_from_slice(key.as_str().as_bytes());
+        headers.extend_from_slice(b": ");
+        headers.extend_from_slice(value.as_bytes());
+        headers.extend_from_slice(b"\r\n");
+    }
+
+    headers.extend_from_slice(b"\r\n");
+    socket.write_all(&headers).await?;
+
+    // Stream the body
+    io::copy(&mut body, socket).await?;
+
+    Ok(())
 }
 
 async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
