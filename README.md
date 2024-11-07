@@ -22,6 +22,9 @@ curl -H "Host: example.com"  http://127.0.0.1/Cargo.toml
 ## Benchmark
 | Percent | Cblt | Nginx | Caddy |
 |---------|------|-------|-------|
+| 50%     | 1956 | 1941  | 1768  |
+| 75%     | 2101 | 2065  | 1849  |
+| 100%    | 2711 | 2360  | 2270  |
 
 
 ### Cblt
@@ -52,33 +55,33 @@ Document Path:          /logo_huge.png
 Document Length:        5122441 bytes
 
 Concurrency Level:      100
-Time taken for tests:   1.328 seconds
+Time taken for tests:   6.020 seconds
 Complete requests:      300
 Failed requests:        0
 Total transferred:      1536745500 bytes
 HTML transferred:       1536732300 bytes
-Requests per second:    225.83 [#/sec] (mean)
-Time per request:       442.804 [ms] (mean)
-Time per request:       4.428 [ms] (mean, across all concurrent requests)
-Transfer rate:          1129716.65 [Kbytes/sec] received
+Requests per second:    49.83 [#/sec] (mean)
+Time per request:       2006.721 [ms] (mean)
+Time per request:       20.067 [ms] (mean, across all concurrent requests)
+Transfer rate:          249283.62 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0    0   0.4      0       2
-Processing:   408  436  11.4    438     463
-Waiting:        0    6   3.4      4      16
-Total:        408  436  11.4    438     463
+Connect:        0    0   0.3      0       2
+Processing:  1293 1926 262.3   1956    2711
+Waiting:        1  118 139.1     63     645
+Total:       1293 1926 262.3   1956    2711
 
 Percentage of the requests served within a certain time (ms)
-  50%    438
-  66%    442
-  75%    445
-  80%    446
-  90%    450
-  95%    455
-  98%    458
-  99%    461
- 100%    463 (longest request)
+  50%   1956
+  66%   2027
+  75%   2101
+  80%   2127
+  90%   2213
+  95%   2394
+  98%   2544
+  99%   2597
+ 100%   2711 (longest request)
  ```
 
 ### Nginx
@@ -142,13 +145,7 @@ Percentage of the requests served within a certain time (ms)
 ### Caddy
 
 ```bash
-igumn@lenovo MINGW64 ~/cblt/benchmark/nginx (main)
-$ docker ps
-CONTAINER ID   IMAGE                 COMMAND                  CREATED              STATUS                  PORTS                                                       NAMES
-b569d15912db   caddy_srv             "caddy run --config …"   About a minute ago   Up About a minute       443/tcp, 0.0.0.0:80->80/tcp, 2019/tcp, 443/udp              caddy_srv
-fe5e452458a1   syncthing/syncthing   "/bin/entrypoint.sh …"   2 days ago           Up 13 hours (healthy)   21027/udp, 127.0.0.1:8384->8384/tcp, 22000/udp, 22000/tcp   syncthing
-
-igumn@lenovo MINGW64 ~/cblt/benchmark/nginx (main)
+igumn@lenovo MINGW64 ~/cblt (main)
 $ ab -c 100 -n 300 http://example.com/logo_huge.png
 This is ApacheBench, Version 2.3 <$Revision: 1913912 $>
 Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
@@ -161,7 +158,7 @@ Completed 300 requests
 Finished 300 requests
 
 
-Server Software:
+Server Software:        Caddy
 Server Hostname:        example.com
 Server Port:            80
 
@@ -169,31 +166,31 @@ Document Path:          /logo_huge.png
 Document Length:        5122441 bytes
 
 Concurrency Level:      100
-Time taken for tests:   1.311 seconds
+Time taken for tests:   5.440 seconds
 Complete requests:      300
 Failed requests:        0
-Total transferred:      1536745500 bytes
+Total transferred:      1536804000 bytes
 HTML transferred:       1536732300 bytes
-Requests per second:    228.84 [#/sec] (mean)
-Time per request:       436.994 [ms] (mean)
-Time per request:       4.370 [ms] (mean, across all concurrent requests)
-Transfer rate:          1144735.80 [Kbytes/sec] received
+Requests per second:    55.14 [#/sec] (mean)
+Time per request:       1813.469 [ms] (mean)
+Time per request:       18.135 [ms] (mean, across all concurrent requests)
+Transfer rate:          275858.99 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
 Connect:        0    0   0.3      0       2
-Processing:   374  432  14.9    429     466
-Waiting:        1    7   3.4      6      20
-Total:        374  432  14.9    429     466
+Processing:  1264 1749 191.1   1767    2270
+Waiting:        1   96 104.7     67     467
+Total:       1265 1749 191.1   1768    2270
 
 Percentage of the requests served within a certain time (ms)
-  50%    429
-  66%    436
-  75%    443
-  80%    446
-  90%    453
-  95%    457
-  98%    462
-  99%    464
- 100%    466 (longest request)
+  50%   1768
+  66%   1821
+  75%   1849
+  80%   1877
+  90%   1955
+  95%   2152
+  98%   2226
+  99%   2241
+ 100%   2270 (longest request)
 ```
