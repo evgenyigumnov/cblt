@@ -162,7 +162,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let response = Response::builder()
                                     .status(StatusCode::FOUND)
                                     .header("Location", &dest)
-                                    .body(dest.as_bytes().to_vec())
+                                    .body(Vec::new()) // Empty body for redirects
                                     .unwrap();
                                 let _ = send_response(&mut socket, response, req_opt).await;
                                 handled = true;
@@ -259,27 +259,19 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
 
 
 fn error_response(status: StatusCode) -> Response<Vec<u8>> {
-
     let msg = match status {
-        StatusCode::BAD_REQUEST => {
-            "Bad request"
-        }
-        StatusCode::FORBIDDEN => {
-            "Forbidden"
-        }
-        StatusCode::NOT_FOUND => {
-            "Not found"
-        }
-        _ => {
-            "Unknown error"
-        }
+        StatusCode::BAD_REQUEST => "Bad request",
+        StatusCode::FORBIDDEN => "Forbidden",
+        StatusCode::NOT_FOUND => "Not found",
+        _ => "Unknown error",
     };
 
     Response::builder()
-        .status(StatusCode::FORBIDDEN)
-        .body(str::as_bytes(msg).to_vec())
+        .status(status)
+        .body(msg.as_bytes().to_vec())
         .unwrap()
 }
+
 fn matches_pattern(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         true
