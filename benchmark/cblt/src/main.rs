@@ -2,7 +2,7 @@ use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use http::{Request, Response, StatusCode};
 use std::error::Error;
-use std::path::Path;
+use std::path::{PathBuf};
 use tokio::fs;
 use std::str;
 use log::{debug, info};
@@ -84,14 +84,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             Directive::FileServer => {
                                 debug!("File server");
                                 if let Some(root) = &root_path {
-                                    let mut file_path = root.clone();
-                                    file_path.push_str(request.uri().path());
+                                    let mut file_path = PathBuf::from(root);
+                                    file_path.push(request.uri().path().trim_start_matches('/'));
 
-                                    let file_path = if Path::new(&file_path).is_dir() {
-                                        format!("{}/index.html", file_path)
-                                    } else {
-                                        file_path
-                                    };
+                                    if file_path.is_dir() {
+                                        file_path.push("index.html");
+                                    }
 
                                     match fs::read(&file_path).await {
                                         Ok(contents) => {
@@ -112,7 +110,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         }
                                     }
                                 } else {
-
                                     let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
                                     let _ = send_response(&mut socket, response, req_opt).await;
                                     handled = true;
@@ -165,7 +162,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let response = Response::builder()
                                     .status(StatusCode::FOUND)
                                     .header("Location", &dest)
-                                    .body(dest.as_bytes().to_vec())
+                                    .body(Vec::new()) // Empty body for redirects
                                     .unwrap();
                                 let _ = send_response(&mut socket, response, req_opt).await;
                                 handled = true;
@@ -196,17 +193,25 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
     } else {
         info!("Response: {}", response.status().as_u16());
     }
-    let mut resp_bytes = Vec::new();
     let (parts, body) = response.into_parts();
 
-    resp_bytes.extend_from_slice(format!("HTTP/1.1 {} {}\r\n", parts.status.as_u16(), parts.status.canonical_reason().unwrap_or("")).as_bytes());
+    // Estimate capacity to reduce reallocations
+    let mut resp_bytes = Vec::with_capacity(128 + body.len());
+    let status_line = format!(
+        "HTTP/1.1 {} {}\r\n",
+        parts.status.as_u16(),
+        parts.status.canonical_reason().unwrap_or("")
+    );
+    resp_bytes.extend_from_slice(status_line.as_bytes());
 
     for (key, value) in parts.headers.iter() {
-        resp_bytes.extend_from_slice(format!("{}: {}\r\n", key, value.to_str()?).as_bytes());
+        resp_bytes.extend_from_slice(key.as_str().as_bytes());
+        resp_bytes.extend_from_slice(b": ");
+        resp_bytes.extend_from_slice(value.as_bytes());
+        resp_bytes.extend_from_slice(b"\r\n");
     }
 
     resp_bytes.extend_from_slice(b"\r\n");
-
     resp_bytes.extend_from_slice(&body);
 
     socket.write_all(&resp_bytes).await?;
@@ -217,14 +222,16 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
 fn parse_request(req_str: &str) -> Option<Request<()>> {
     let mut lines = req_str.lines();
 
-    let request_line = lines.next()?.split_whitespace().collect::<Vec<&str>>();
-    if request_line.len() != 3 {
+    // Parse the request line
+    let mut request_line_parts = lines.next()?.split_whitespace();
+    let method = request_line_parts.next()?;
+    let uri = request_line_parts.next()?;
+    let version_str = request_line_parts.next()?;
+    if request_line_parts.next().is_some() {
         return None;
     }
 
-    let method = request_line[0];
-    let uri = request_line[1];
-    let version = match request_line[2] {
+    let version = match version_str {
         "HTTP/1.1" => http::Version::HTTP_11,
         "HTTP/1.0" => http::Version::HTTP_10,
         _ => return None,
@@ -235,43 +242,36 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
         .uri(uri)
         .version(version);
 
+    // Parse headers
     for line in lines {
         if line.is_empty() {
             break;
         }
-        let parts = line.splitn(2, ": ").collect::<Vec<&str>>();
-        if parts.len() != 2 {
-            return None;
-        }
-        builder = builder.header(parts[0], parts[1]);
+        let mut header_parts = line.splitn(2, ": ");
+        let key = header_parts.next()?;
+        let value = header_parts.next()?;
+        builder = builder.header(key, value);
     }
 
     builder.body(()).ok()
 }
 
 
-fn error_response(status: StatusCode) -> Response<Vec<u8>> {
 
+fn error_response(status: StatusCode) -> Response<Vec<u8>> {
     let msg = match status {
-        StatusCode::BAD_REQUEST => {
-            "Bad request"
-        }
-        StatusCode::FORBIDDEN => {
-            "Forbidden"
-        }
-        StatusCode::NOT_FOUND => {
-            "Not found"
-        }
-        _ => {
-            "Unknown error"
-        }
+        StatusCode::BAD_REQUEST => "Bad request",
+        StatusCode::FORBIDDEN => "Forbidden",
+        StatusCode::NOT_FOUND => "Not found",
+        _ => "Unknown error",
     };
 
     Response::builder()
-        .status(StatusCode::FORBIDDEN)
-        .body(str::as_bytes(msg).to_vec())
+        .status(status)
+        .body(msg.as_bytes().to_vec())
         .unwrap()
 }
+
 fn matches_pattern(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         true
