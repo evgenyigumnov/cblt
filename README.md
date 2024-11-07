@@ -10,11 +10,11 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 
 
 ## Docker
-
+```bash
 docker build -t cblt:0.0.1 .
 docker run -d -p 80:80 --restart unless-stopped --name cblt cblt:0.0.1
-
-## Tests
+```
+## Test
 
 curl -H "Host: example.com"  http://127.0.0.1/Cargo.toml
 
