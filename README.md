@@ -1,4 +1,6 @@
-# Сblt
+# СBLT
+
+![cblt](https://github.com/evgenyigumnov/cblt/raw/HEAD/log.png)
 
 Safe and fast minimalistic web server, written in Rust, that serves files from a directory.
 
