@@ -20,6 +20,10 @@ curl -H "Host: example.com"  http://127.0.0.1/Cargo.toml
 
 
 ## Benchmark
+| Percent | Cblt | Nginx | Caddy |
+|---------|------|-------|-------|
+| 50%     | 438  | 1974  | 0     |
+| 100%    | 442  | 2068  | 0     |
 
 ### Cblt
 ```bash
@@ -28,7 +32,7 @@ $ docker ps
 CONTAINER ID   IMAGE                 COMMAND                  CREATED         STATUS                 PORTS                                                       NAMES
 0589d8f26d91   cblt:0.0.1            "./cblt"                 2 minutes ago   Up 2 minutes           0.0.0.0:80->80/tcp                                          cblt
 
-igumn@lenovo MINGW64 ~/cblt/benchmark (main)
+igumn@lenovo MINGW64 ~/cblt (main)
 $ ab -c 100 -n 300 http://example.com/logo_huge.png
 This is ApacheBench, Version 2.3 <$Revision: 1913912 $>
 Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
@@ -49,33 +53,33 @@ Document Path:          /logo_huge.png
 Document Length:        5122441 bytes
 
 Concurrency Level:      100
-Time taken for tests:   6.724 seconds
+Time taken for tests:   1.328 seconds
 Complete requests:      300
 Failed requests:        0
 Total transferred:      1536745500 bytes
 HTML transferred:       1536732300 bytes
-Requests per second:    44.61 [#/sec] (mean)
-Time per request:       2241.498 [ms] (mean)
-Time per request:       22.415 [ms] (mean, across all concurrent requests)
-Transfer rate:          223173.41 [Kbytes/sec] received
+Requests per second:    225.83 [#/sec] (mean)
+Time per request:       442.804 [ms] (mean)
+Time per request:       4.428 [ms] (mean, across all concurrent requests)
+Transfer rate:          1129716.65 [Kbytes/sec] received
 
 Connection Times (ms)
               min  mean[+/-sd] median   max
-Connect:        0    0   0.3      0       2
-Processing:   475 2162 242.3   2202    2574
-Waiting:        7  156  92.4    155     345
-Total:        475 2163 242.4   2202    2574
+Connect:        0    0   0.4      0       2
+Processing:   408  436  11.4    438     463
+Waiting:        0    6   3.4      4      16
+Total:        408  436  11.4    438     463
 
 Percentage of the requests served within a certain time (ms)
-  50%   2202
-  66%   2329
-  75%   2370
-  80%   2394
-  90%   2439
-  95%   2465
-  98%   2504
-  99%   2530
- 100%   2574 (longest request)
+  50%    438
+  66%    442
+  75%    445
+  80%    446
+  90%    450
+  95%    455
+  98%    458
+  99%    461
+ 100%    463 (longest request)
  ```
 
 ### Nginx
