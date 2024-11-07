@@ -196,17 +196,25 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
     } else {
         info!("Response: {}", response.status().as_u16());
     }
-    let mut resp_bytes = Vec::new();
     let (parts, body) = response.into_parts();
 
-    resp_bytes.extend_from_slice(format!("HTTP/1.1 {} {}\r\n", parts.status.as_u16(), parts.status.canonical_reason().unwrap_or("")).as_bytes());
+    // Estimate capacity to reduce reallocations
+    let mut resp_bytes = Vec::with_capacity(128 + body.len());
+    let status_line = format!(
+        "HTTP/1.1 {} {}\r\n",
+        parts.status.as_u16(),
+        parts.status.canonical_reason().unwrap_or("")
+    );
+    resp_bytes.extend_from_slice(status_line.as_bytes());
 
     for (key, value) in parts.headers.iter() {
-        resp_bytes.extend_from_slice(format!("{}: {}\r\n", key, value.to_str()?).as_bytes());
+        resp_bytes.extend_from_slice(key.as_str().as_bytes());
+        resp_bytes.extend_from_slice(b": ");
+        resp_bytes.extend_from_slice(value.as_bytes());
+        resp_bytes.extend_from_slice(b"\r\n");
     }
 
     resp_bytes.extend_from_slice(b"\r\n");
-
     resp_bytes.extend_from_slice(&body);
 
     socket.write_all(&resp_bytes).await?;
