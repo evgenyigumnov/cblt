@@ -16,7 +16,7 @@ mod config;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("trace")).try_init();
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
 
     info!("Cblt started");
 
