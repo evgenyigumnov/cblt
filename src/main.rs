@@ -105,7 +105,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             break;
                                         }
                                         Err(_) => {
-                                            continue;
+                                            let response = error_response(StatusCode::NOT_FOUND);
+                                            let _ = send_response(&mut socket, response, req_opt).await;
+                                            handled = true;
+                                            break;
                                         }
                                     }
                                 } else {
