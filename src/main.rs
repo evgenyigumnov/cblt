@@ -2,7 +2,7 @@ use crate::config::{build_config, Directive};
 use crate::request::parse_request;
 use crate::response::{error_response, send_response, send_response_file};
 use bytes::Bytes;
-use http::{Response, StatusCode};
+use http::{Request, Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, info};
 use reqwest;
@@ -109,39 +109,8 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
             }
             Directive::FileServer => {
                 debug!("File server");
-
-                if let Some(root) = &root_path {
-                    let mut file_path = PathBuf::from(root);
-                    file_path.push(request.uri().path().trim_start_matches('/'));
-
-                    if file_path.is_dir() {
-                        file_path.push("index.html");
-                    }
-
-                    match File::open(&file_path).await {
-                        Ok(file) => {
-
-                            let metadata = file.metadata().await.unwrap();
-                            let content_length = metadata.len();
-
-                            let response = file_response(file, content_length);
-                            let _ = send_response_file(&mut *socket, response, req_opt).await;
-                            handled = true;
-                            break;
-                        }
-                        Err(_) => {
-                            let response = error_response(StatusCode::NOT_FOUND);
-                            let _ = send_response(socket, response, req_opt).await;
-                            handled = true;
-                            break;
-                        }
-                    }
-                } else {
-                    let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
-                    let _ = send_response(socket, response, req_opt).await;
-                    handled = true;
-                    break;
-                }
+                file_server(&root_path, &request, &mut handled, socket, req_opt).await;
+                break;
             }
             Directive::ReverseProxy {
                 pattern,
@@ -202,6 +171,45 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
         let response = error_response(StatusCode::NOT_FOUND);
         let _ = send_response(socket, response, req_opt).await;
     }
+}
+
+#[instrument(level = "trace", skip_all)]
+async fn file_server(root_path:&Option<String>, request: &Request<()>, handled: &mut bool,
+           socket: &mut tokio::net::TcpStream, req_opt: Option<&Request<()>>
+) {
+    if let Some(root) = root_path {
+        let mut file_path = PathBuf::from(root);
+        file_path.push(request.uri().path().trim_start_matches('/'));
+
+        if file_path.is_dir() {
+            file_path.push("index.html");
+        }
+
+        match File::open(&file_path).await {
+            Ok(file) => {
+
+                let metadata = file.metadata().await.unwrap();
+                let content_length = metadata.len();
+
+                let response = file_response(file, content_length);
+                let _ = send_response_file(socket, response, req_opt).await;
+                *handled = true;
+                return;
+            }
+            Err(_) => {
+                let response = error_response(StatusCode::NOT_FOUND);
+                let _ = send_response(&mut *socket, response, req_opt).await;
+                *handled = true;
+                return;
+            }
+        }
+    } else {
+        let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
+        let _ = send_response(&mut *socket, response, req_opt).await;
+        *handled = true;
+        return;
+    }
+
 }
 
 #[instrument(level = "trace", skip_all)]
