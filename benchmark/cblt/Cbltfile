@@ -1,5 +1,4 @@
 example.com {
-    reverse_proxy "/api/*" "http://46.101.176.1:80"
     root "*" "."
     file_server
 }
