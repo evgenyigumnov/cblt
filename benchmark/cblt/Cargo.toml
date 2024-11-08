@@ -1,13 +1,23 @@
 [package]
 name = "cblt"
-version = "1.0.0"
+version = "0.0.1"
 edition = "2021"
 
 authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
 
+repository = "https://github.com/evgenyigumnov/cblt"
+license = "MIT"
+description = "Safe and fast minimalistic web server, written in Rust, that serves files from a directory and proxies requests to another server."
+keywords = ["web-server", "http", "proxy", "reverse-proxy", "file-server"]
+categories = ["web-programming", "network-programming", "development-tools"]
+
+exclude = ["benchmark", "image_huge.png"]
+
+
 [[bin]]
 name = "cblt"
 path = "src/main.rs"
+
 
 [dependencies]
 tokio = { version = "1.41.0", features = ["full"] }
@@ -21,3 +31,5 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 httparse = "1.9.5"
 itoa = "1.0.11"
+
+
