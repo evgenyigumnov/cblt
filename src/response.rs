@@ -46,18 +46,21 @@ pub async fn send_response_file(
     // Wrap the socket in a BufWriter
     let mut writer = BufWriter::new(socket);
 
-    // Write status line
-    let status_line = format!(
-        "HTTP/1.1 {} {}\r\n",
-        parts.status.as_u16(),
-        parts.status.canonical_reason().unwrap_or("")
-    );
-    writer.write_all(status_line.as_bytes()).await?;
+    // Write status line without allocation
+    writer.write_all(b"HTTP/1.1 ").await?;
+    let mut itoa_buf = itoa::Buffer::new();
+    let status_str = itoa_buf.format(parts.status.as_u16());
+    writer.write_all(status_str.as_bytes()).await?;
+    writer.write_all(b" ").await?;
+    writer.write_all(parts.status.canonical_reason().unwrap_or("").as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
 
-    // Write headers
+    // Write headers without allocation
     for (key, value) in parts.headers.iter() {
-        let header_line = format!("{}: {}\r\n", key.as_str(), value.to_str().unwrap_or(""));
-        writer.write_all(header_line.as_bytes()).await?;
+        writer.write_all(key.as_str().as_bytes()).await?;
+        writer.write_all(b": ").await?;
+        writer.write_all(value.to_str().unwrap_or("").as_bytes()).await?;
+        writer.write_all(b"\r\n").await?;
     }
 
     // End headers
@@ -73,6 +76,7 @@ pub async fn send_response_file(
 }
 
 const BUFFER_SIZE: usize = 8192;
+const HEX_DIGITS: &[u8] = b"0123456789ABCDEF";
 
 async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<()>
     where
@@ -80,24 +84,38 @@ async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<(
         W: AsyncWriteExt + Unpin,
 {
     let mut buf = [0u8; BUFFER_SIZE];
+    let mut size_buf = [0u8; 16]; // Buffer for hex chunk size
+
     loop {
         let n = reader.read(&mut buf).await?;
         if n == 0 {
             break;
         }
-        // Write chunk size in hex followed by \r\n
-        let chunk_size = format!("{:X}\r\n", n);
-        writer.write_all(chunk_size.as_bytes()).await?;
+
+        // Write chunk size in hex without allocation
+        let mut idx = size_buf.len() - 1;
+        let mut size = n;
+        // Convert to hex digits
+        loop {
+            size_buf[idx] = HEX_DIGITS[size % 16];
+            size /= 16;
+            if size == 0 {
+                break;
+            }
+            idx -= 1;
+        }
+        writer.write_all(&size_buf[idx..]).await?;
+        writer.write_all(b"\r\n").await?;
+
         // Write chunk data
         writer.write_all(&buf[..n]).await?;
-        // Write \r\n
         writer.write_all(b"\r\n").await?;
     }
-    // Write final chunk: 0\r\n\r\n
+
+    // Write final chunk
     writer.write_all(b"0\r\n\r\n").await?;
     Ok(())
 }
-
 
 #[instrument]
 pub async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
