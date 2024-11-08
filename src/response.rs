@@ -1,14 +1,17 @@
 use std::error::Error;
-use http::{Request, Response, StatusCode};
+use std::fmt::Debug;
+use http::{HeaderValue, Request, Response, StatusCode};
+use http::header::TRANSFER_ENCODING;
 use log::{debug, info};
 use tokio::io;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::net::TcpStream;
 use tracing::instrument;
 
 #[instrument]
 pub async fn send_response_file(
-    socket: &mut tokio::net::TcpStream,
-    response: Response<impl AsyncReadExt + Unpin + std::fmt::Debug>,
+    socket: &mut TcpStream,
+    response: Response<impl AsyncReadExt + Unpin + Debug>,
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>> {
     if let Some(req) = req_opt {
@@ -32,32 +35,69 @@ pub async fn send_response_file(
     } else {
         info!("Response: {}", response.status().as_u16());
     }
-    let (parts, mut body) = response.into_parts();
+    let (mut parts, mut body) = response.into_parts();
 
-    // Build and send headers
-    let mut headers = Vec::with_capacity(128);
+    // Add Transfer-Encoding: chunked header
+    parts.headers.insert(
+        TRANSFER_ENCODING,
+        HeaderValue::from_static("chunked"),
+    );
+
+    // Wrap the socket in a BufWriter
+    let mut writer = BufWriter::new(socket);
+
+    // Write status line
     let status_line = format!(
         "HTTP/1.1 {} {}\r\n",
         parts.status.as_u16(),
         parts.status.canonical_reason().unwrap_or("")
     );
-    headers.extend_from_slice(status_line.as_bytes());
+    writer.write_all(status_line.as_bytes()).await?;
 
+    // Write headers
     for (key, value) in parts.headers.iter() {
-        headers.extend_from_slice(key.as_str().as_bytes());
-        headers.extend_from_slice(b": ");
-        headers.extend_from_slice(value.as_bytes());
-        headers.extend_from_slice(b"\r\n");
+        let header_line = format!("{}: {}\r\n", key.as_str(), value.to_str().unwrap_or(""));
+        writer.write_all(header_line.as_bytes()).await?;
     }
 
-    headers.extend_from_slice(b"\r\n");
-    socket.write_all(&headers).await?;
+    // End headers
+    writer.write_all(b"\r\n").await?;
 
-    // Stream the body
-    io::copy(&mut body, socket).await?;
+    // Write body with chunked encoding
+    write_chunked_body(&mut body, &mut writer).await?;
+
+    // Ensure all data is flushed
+    writer.flush().await?;
 
     Ok(())
 }
+
+const BUFFER_SIZE: usize = 8192;
+
+async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<()>
+    where
+        R: AsyncReadExt + Unpin,
+        W: AsyncWriteExt + Unpin,
+{
+    let mut buf = [0u8; BUFFER_SIZE];
+    loop {
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        // Write chunk size in hex followed by \r\n
+        let chunk_size = format!("{:X}\r\n", n);
+        writer.write_all(chunk_size.as_bytes()).await?;
+        // Write chunk data
+        writer.write_all(&buf[..n]).await?;
+        // Write \r\n
+        writer.write_all(b"\r\n").await?;
+    }
+    // Write final chunk: 0\r\n\r\n
+    writer.write_all(b"0\r\n\r\n").await?;
+    Ok(())
+}
+
 
 #[instrument]
 pub async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
