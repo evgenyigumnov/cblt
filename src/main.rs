@@ -209,9 +209,7 @@ async fn file_server(
 
         match File::open(&file_path).await {
             Ok(file) => {
-                let metadata = file.metadata().await.unwrap();
-                let content_length = metadata.len();
-
+                let content_length = file_size(&file).await;
                 let response = file_response(file, content_length);
                 let _ = send_response_file(socket, response, req_opt).await;
                 *handled = true;
@@ -230,6 +228,11 @@ async fn file_server(
         *handled = true;
         return;
     }
+}
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+async fn file_size(file: &File) -> u64 {
+    let metadata = file.metadata().await.unwrap();
+    metadata.len()
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
