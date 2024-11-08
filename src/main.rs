@@ -48,8 +48,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[instrument(level = "trace", skip_all)]
 async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<config::Config>) {
-    let before_directive_span = span!(Level::TRACE, "before_directive");
-    let enter = before_directive_span.enter();
     let mut buf = Vec::with_capacity(4096);
     let mut reader = BufReader::new(&mut *socket);
     let mut n = 0;
@@ -101,7 +99,6 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
     let mut root_path = None;
     let mut handled = false;
 
-    drop(enter);
     for directive in &host_config.directives {
         match directive {
             Directive::Root { pattern, path } => {
@@ -112,8 +109,6 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
             }
             Directive::FileServer => {
                 debug!("File server");
-                let file_server_directive_span = span!(Level::TRACE, "file_server_directive");
-                let _enter = file_server_directive_span.enter();
 
                 if let Some(root) = &root_path {
                     let mut file_path = PathBuf::from(root);
@@ -125,8 +120,6 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
 
                     match File::open(&file_path).await {
                         Ok(file) => {
-                            let read_file_span = span!(Level::TRACE, "read_file");
-                            let enter = read_file_span.enter();
 
                             let metadata = file.metadata().await.unwrap();
                             let content_length = metadata.len();
@@ -136,7 +129,6 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
                                 .header("Content-Length", content_length)
                                 .body(file)
                                 .unwrap();
-                            drop(enter);
                             let _ = send_response_file(&mut *socket, response, req_opt).await;
                             handled = true;
                             break;

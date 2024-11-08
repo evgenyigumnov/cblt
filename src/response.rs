@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::TcpStream;
-use tracing::instrument;
+use tracing::{instrument, Level, span};
 
 #[instrument(level = "trace", skip_all)]
 pub async fn send_response_file(
@@ -81,6 +81,7 @@ pub async fn send_response_file(
 const BUFFER_SIZE: usize = 8192;
 const HEX_DIGITS: &[u8] = b"0123456789ABCDEF";
 
+#[instrument(level = "trace", skip_all)]
 async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<()>
 where
     R: AsyncReadExt + Unpin,
@@ -113,7 +114,6 @@ where
         // Write chunk data
         writer.write_all(&buf[..n]).await?;
         writer.write_all(b"\r\n").await?;
-        writer.flush().await?;
     }
 
     // Write final chunk
