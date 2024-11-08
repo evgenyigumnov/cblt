@@ -124,11 +124,7 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
                             let metadata = file.metadata().await.unwrap();
                             let content_length = metadata.len();
 
-                            let response = Response::builder()
-                                .status(StatusCode::OK)
-                                .header("Content-Length", content_length)
-                                .body(file)
-                                .unwrap();
+                            let response = file_response(file, content_length);
                             let _ = send_response_file(&mut *socket, response, req_opt).await;
                             handled = true;
                             break;
@@ -206,6 +202,16 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
         let response = error_response(StatusCode::NOT_FOUND);
         let _ = send_response(socket, response, req_opt).await;
     }
+}
+
+#[instrument(level = "trace", skip_all)]
+fn file_response(file: File, content_length: u64 ) -> Response<File> {
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Length", content_length)
+        .body(file)
+        .unwrap()
 }
 
 #[allow(dead_code)]
