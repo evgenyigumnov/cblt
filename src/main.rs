@@ -49,7 +49,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[instrument]
 async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<config::Config>) {
-    println!("123");
     let mut buf = Vec::with_capacity(4096);
     let mut reader = BufReader::new(&mut *socket);
     let mut n = 0;
