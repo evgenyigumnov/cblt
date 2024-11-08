@@ -50,54 +50,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<config::Config>) {
-    // let mut buf = Vec::with_capacity(4096);
-    // let mut reader = BufReader::new(&mut *socket);
-    // let mut n = 0;
-    // loop {
-    //     let bytes_read = reader.read_until(b'\n', &mut buf).await.unwrap();
-    //     n += bytes_read;
-    //     if bytes_read == 0 {
-    //         break; // Connection closed
-    //     }
-    //     if buf.ends_with(b"\r\n\r\n") {
-    //         break; // End of headers
-    //     }
-    // }
-    //
-    // let req_str = match str::from_utf8(&buf[..n]) {
-    //     Ok(v) => v,
-    //     Err(_) => {
-    //         let response = error_response(StatusCode::BAD_REQUEST);
-    //         let _ = send_response(socket, response, None).await;
-    //         return;
-    //     }
-    // };
-    //
-    // let request = match parse_request(req_str) {
-    //     Some(req) => req,
-    //     None => {
-    //         let response = error_response(StatusCode::BAD_REQUEST);
-    //         let _ = send_response(socket, response, None).await;
-    //         return;
-    //     }
-    // };
-    //
-    // let host = match request.headers().get("Host") {
-    //     Some(h) => h.to_str().unwrap_or(""),
-    //     None => "",
-    // };
-    //
-    // let req_opt = Some(&request);
-    //
-    // let host_config = match config.hosts.get(host) {
-    //     Some(cfg) => cfg,
-    //     None => {
-    //         let response = error_response(StatusCode::FORBIDDEN);
-    //         let _ = send_response(socket, response, req_opt).await;
-    //         return;
-    //     }
-    // };
-
     match read_from_socket(socket).await {
         None => {
             return;
