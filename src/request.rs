@@ -5,7 +5,7 @@ use tracing::instrument;
 mod tests {
     use std::error::Error;
     use crate::only_in_debug;
-    use crate::request::{parse_requesst};
+    use crate::request::{parse_request};
 
     #[test]
     fn test_simple() ->  Result<(), Box<dyn Error>> {
@@ -17,7 +17,7 @@ User-Agent: curl/7.68.0
 Accept: */*
 "#;
 
-        let req = parse_requesst(request_str);
+        let req = parse_request(request_str);
         println!("{:#?}", req);
 
         Ok(())
@@ -29,8 +29,8 @@ Accept: */*
 use http::{Version};
 use httparse::Status;
 
-#[instrument]
-pub fn parse_requesst(req_str: &str) -> Option<Request<()>> {
+#[instrument(level = "trace", skip_all)]
+pub fn parse_request(req_str: &str) -> Option<Request<()>> {
     let mut headers = [httparse::EMPTY_HEADER; 16]; // Adjust the size as needed
     let mut req = httparse::Request::new(&mut headers);
 
