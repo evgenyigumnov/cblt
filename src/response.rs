@@ -12,8 +12,8 @@ pub async fn send_response_file(
     response: Response<impl AsyncReadExt + Unpin + Debug>,
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>> {
-    #[cfg(debug_assertions)]
     if let Some(req) = req_opt {
+        #[cfg(debug_assertions)]
         debug!("{:?}", req);
         if let Some(host_header) = req.headers().get("Host") {
             info!(
