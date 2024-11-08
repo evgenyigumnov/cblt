@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::TcpStream;
-use tracing::{instrument, Level, span};
+use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_file(
@@ -14,6 +14,7 @@ pub async fn send_response_file(
     response: Response<impl AsyncReadExt + Unpin + Debug>,
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>> {
+    #[cfg(debug_assertions)]
     if let Some(req) = req_opt {
         debug!("{:?}", req);
         if let Some(host_header) = req.headers().get("Host") {
@@ -127,6 +128,7 @@ pub async fn send_response(
     response: Response<Vec<u8>>,
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>> {
+    #[cfg(debug_assertions)]
     if let Some(req) = req_opt {
         debug!("{:?}", req);
         if let Some(host_header) = req.headers().get("Host") {

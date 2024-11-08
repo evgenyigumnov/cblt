@@ -1,4 +1,4 @@
-use crate::config::{build_config, Directive, HostConfig};
+use crate::config::{build_config, Directive};
 use crate::request::parse_request;
 use crate::response::{error_response, send_response, send_response_file};
 use bytes::Bytes;
@@ -14,12 +14,11 @@ use tokio::fs;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpListener;
-use tracing::{span, Level};
+use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
 
 use tracing::instrument;
-
 
 mod config;
 mod request;
@@ -125,12 +124,14 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
             for directive in &host_config.directives {
                 match directive {
                     Directive::Root { pattern, path } => {
+                        #[cfg(debug_assertions)]
                         debug!("Root: {} -> {}", pattern, path);
                         if matches_pattern(pattern, request.uri().path()) {
                             root_path = Some(path.clone());
                         }
                     }
                     Directive::FileServer => {
+                        #[cfg(debug_assertions)]
                         debug!("File server");
                         file_server(&root_path, &request, &mut handled, socket, req_opt).await;
                         break;
@@ -139,12 +140,15 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
                         pattern,
                         destination,
                     } => {
+                        #[cfg(debug_assertions)]
                         debug!("Reverse proxy: {} -> {}", pattern, destination);
                         if matches_pattern(pattern, request.uri().path()) {
                             let dest_uri = format!("{}{}", destination, request.uri().path());
+                            #[cfg(debug_assertions)]
                             debug!("Destination URI: {}", dest_uri);
                             let client = reqwest::Client::new();
-                            let mut req_builder = client.request(request.method().clone(), &dest_uri);
+                            let mut req_builder =
+                                client.request(request.method().clone(), &dest_uri);
 
                             for (key, value) in request.headers().iter() {
                                 req_builder = req_builder.header(key, value);
@@ -194,7 +198,6 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
                 let response = error_response(StatusCode::NOT_FOUND);
                 let _ = send_response(socket, response, req_opt).await;
             }
-
         }
     }
 }
@@ -233,14 +236,16 @@ async fn read_from_socket(socket: &mut tokio::net::TcpStream) -> Option<Request<
         }
     };
 
-
-
     Some(request)
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn file_server(root_path:&Option<String>, request: &Request<()>, handled: &mut bool,
-           socket: &mut tokio::net::TcpStream, req_opt: Option<&Request<()>>
+async fn file_server(
+    root_path: &Option<String>,
+    request: &Request<()>,
+    handled: &mut bool,
+    socket: &mut tokio::net::TcpStream,
+    req_opt: Option<&Request<()>>,
 ) {
     if let Some(root) = root_path {
         let mut file_path = PathBuf::from(root);
@@ -252,7 +257,6 @@ async fn file_server(root_path:&Option<String>, request: &Request<()>, handled: 
 
         match File::open(&file_path).await {
             Ok(file) => {
-
                 let metadata = file.metadata().await.unwrap();
                 let content_length = metadata.len();
 
@@ -274,12 +278,10 @@ async fn file_server(root_path:&Option<String>, request: &Request<()>, handled: 
         *handled = true;
         return;
     }
-
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-fn file_response(file: File, content_length: u64 ) -> Response<File> {
-
+fn file_response(file: File, content_length: u64) -> Response<File> {
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Length", content_length)

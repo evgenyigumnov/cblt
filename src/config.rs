@@ -103,6 +103,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
     }
 
     let ret = Config { hosts };
+    #[cfg(debug_assertions)]
     debug!("{:#?}", ret);
     Ok(ret)
 }

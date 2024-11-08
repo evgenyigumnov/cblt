@@ -105,6 +105,7 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
     for directive in &host_config.directives {
         match directive {
             Directive::Root { pattern, path } => {
+                #[cfg(debug_assertions)]
                 debug!("Root: {} -> {}", pattern, path);
                 if matches_pattern(pattern, request.uri().path()) {
                     root_path = Some(path.clone());
