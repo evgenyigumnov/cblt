@@ -113,7 +113,6 @@ where
         // Write chunk data
         writer.write_all(&buf[..n]).await?;
         writer.write_all(b"\r\n").await?;
-        writer.flush().await?;
     }
 
     // Write final chunk
