@@ -1,5 +1,5 @@
 use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use http::{Request, Response, StatusCode};
 use std::error::Error;
 use std::path::{PathBuf};
@@ -33,155 +33,163 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let config = Arc::clone(&config);
 
         tokio::spawn(async move {
-            let mut buf = [0; 4096];
+            // let mut buf = [0; 4096];
+            let mut buf = Vec::with_capacity(4096);
+            let mut reader = BufReader::new(&mut socket);
+            let mut n = 0;
+            loop {
+                let bytes_read = reader.read_until(b'\n', &mut buf).await.unwrap();
+                n += bytes_read;
+                if bytes_read == 0 {
+                    break; // Connection closed
+                }
+                if buf.ends_with(b"\r\n\r\n") {
+                    break; // End of headers
+                }
+            }
 
-            match socket.read(&mut buf).await {
-                Ok(n) => {
-                    let req_str = match str::from_utf8(&buf[..n]) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            let response = error_response(StatusCode::BAD_REQUEST);
-                            let _ = send_response(&mut socket, response, None).await;
-                            return;
+            let req_str = match str::from_utf8(&buf[..n]) {
+                Ok(v) => v,
+                Err(_) => {
+                    let response = error_response(StatusCode::BAD_REQUEST);
+                    let _ = send_response(&mut socket, response, None).await;
+                    return;
+                }
+            };
+
+            let request = match parse_request(req_str) {
+                Some(req) => req,
+                None => {
+                    let response = error_response(StatusCode::BAD_REQUEST);
+                    let _ = send_response(&mut socket, response, None).await;
+                    return;
+                }
+            };
+
+            let host = match request.headers().get("Host") {
+                Some(h) => h.to_str().unwrap_or(""),
+                None => "",
+            };
+
+            let req_opt = Some(&request);
+
+            let host_config = match config.hosts.get(host) {
+                Some(cfg) => cfg,
+                None => {
+                    let response = error_response(StatusCode::FORBIDDEN);
+                    let _ = send_response(&mut socket, response, req_opt).await;
+                    return;
+                }
+            };
+
+            let mut root_path = None;
+            let mut handled = false;
+
+            for directive in &host_config.directives {
+                match directive {
+                    Directive::Root { pattern, path } => {
+                        debug!("Root: {} -> {}", pattern, path);
+                        if matches_pattern(pattern, request.uri().path()) {
+                            root_path = Some(path.clone());
                         }
-                    };
+                    }
+                    Directive::FileServer => {
+                        debug!("File server");
+                        if let Some(root) = &root_path {
+                            let mut file_path = PathBuf::from(root);
+                            file_path.push(request.uri().path().trim_start_matches('/'));
 
-                    let request = match parse_request(req_str) {
-                        Some(req) => req,
-                        None => {
-                            let response = error_response(StatusCode::BAD_REQUEST);
-                            let _ = send_response(&mut socket, response, None).await;
-                            return;
-                        }
-                    };
-
-                    let host = match request.headers().get("Host") {
-                        Some(h) => h.to_str().unwrap_or(""),
-                        None => "",
-                    };
-
-                    let req_opt = Some(&request);
-
-                    let host_config = match config.hosts.get(host) {
-                        Some(cfg) => cfg,
-                        None => {
-                            let response = error_response(StatusCode::FORBIDDEN);
-                            let _ = send_response(&mut socket, response, req_opt).await;
-                            return;
-                        }
-                    };
-
-                    let mut root_path = None;
-                    let mut handled = false;
-
-                    for directive in &host_config.directives {
-                        match directive {
-                            Directive::Root { pattern, path } => {
-                                debug!("Root: {} -> {}", pattern, path);
-                                if matches_pattern(pattern, request.uri().path()) {
-                                    root_path = Some(path.clone());
-                                }
+                            if file_path.is_dir() {
+                                file_path.push("index.html");
                             }
-                            Directive::FileServer => {
-                                debug!("File server");
-                                if let Some(root) = &root_path {
-                                    let mut file_path = PathBuf::from(root);
-                                    file_path.push(request.uri().path().trim_start_matches('/'));
 
-                                    if file_path.is_dir() {
-                                        file_path.push("index.html");
-                                    }
+                            match File::open(&file_path).await {
+                                Ok(file) => {
+                                    let metadata = file.metadata().await.unwrap();
+                                    let content_length = metadata.len();
 
-                                    match File::open(&file_path).await {
-                                        Ok(file) => {
-                                            let metadata = file.metadata().await.unwrap();
-                                            let content_length = metadata.len();
+                                    let response = Response::builder()
+                                        .status(StatusCode::OK)
+                                        .header("Content-Length", content_length)
+                                        .body(file)
+                                        .unwrap();
 
-                                            let response = Response::builder()
-                                                .status(StatusCode::OK)
-                                                .header("Content-Length", content_length)
-                                                .body(file)
-                                                .unwrap();
-
-                                            let _ = send_response_file(&mut socket, response, req_opt).await;
-                                            handled = true;
-                                            break;
-                                        }
-                                        Err(_) => {
-                                            let response = error_response(StatusCode::NOT_FOUND);
-                                            let _ = send_response(&mut socket, response, req_opt).await;
-                                            handled = true;
-                                            break;
-                                        }
-                                    }
-                                } else {
-                                    let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
+                                    let _ = send_response_file(&mut socket, response, req_opt).await;
+                                    handled = true;
+                                    break;
+                                }
+                                Err(_) => {
+                                    let response = error_response(StatusCode::NOT_FOUND);
                                     let _ = send_response(&mut socket, response, req_opt).await;
                                     handled = true;
                                     break;
                                 }
                             }
-                            Directive::ReverseProxy { pattern, destination } => {
-                                debug!("Reverse proxy: {} -> {}", pattern, destination);
-                                if matches_pattern(pattern, request.uri().path()) {
-                                    let dest_uri = format!("{}{}", destination, request.uri().path());
-                                    debug!("Destination URI: {}", dest_uri);
-                                    let client = reqwest::Client::new();
-                                    let mut req_builder = client.request(
-                                        request.method().clone(),
-                                        &dest_uri,
-                                    );
+                        } else {
+                            let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
+                            let _ = send_response(&mut socket, response, req_opt).await;
+                            handled = true;
+                            break;
+                        }
+                    }
+                    Directive::ReverseProxy { pattern, destination } => {
+                        debug!("Reverse proxy: {} -> {}", pattern, destination);
+                        if matches_pattern(pattern, request.uri().path()) {
+                            let dest_uri = format!("{}{}", destination, request.uri().path());
+                            debug!("Destination URI: {}", dest_uri);
+                            let client = reqwest::Client::new();
+                            let mut req_builder = client.request(
+                                request.method().clone(),
+                                &dest_uri,
+                            );
 
-                                    for (key, value) in request.headers().iter() {
-                                        req_builder = req_builder.header(key, value);
-                                    }
-
-                                    match req_builder.send().await {
-                                        Ok(resp) => {
-                                            let status = resp.status();
-                                            let headers = resp.headers().clone();
-                                            let body = resp.bytes().await.unwrap_or_else(|_| Bytes::new());
-
-                                            let mut response_builder = Response::builder().status(status);
-
-                                            for (key, value) in headers.iter() {
-                                                response_builder = response_builder.header(key, value);
-                                            }
-
-                                            let response = response_builder.body(body.to_vec()).unwrap();
-                                            let _ = send_response(&mut socket, response, req_opt).await;
-                                            handled = true;
-                                            break;
-                                        }
-                                        Err(_) => {
-                                            let response = error_response(StatusCode::BAD_GATEWAY);
-                                            let _ = send_response(&mut socket, response, req_opt).await;
-                                            handled = true;
-                                            break;
-                                        }
-                                    }
-                                }
+                            for (key, value) in request.headers().iter() {
+                                req_builder = req_builder.header(key, value);
                             }
-                            Directive::Redir { destination } => {
-                                let dest = destination.replace("{uri}", request.uri().path());
-                                let response = Response::builder()
-                                    .status(StatusCode::FOUND)
-                                    .header("Location", &dest)
-                                    .body(Vec::new()) // Empty body for redirects
-                                    .unwrap();
-                                let _ = send_response(&mut socket, response, req_opt).await;
-                                handled = true;
-                                break;
+
+                            match req_builder.send().await {
+                                Ok(resp) => {
+                                    let status = resp.status();
+                                    let headers = resp.headers().clone();
+                                    let body = resp.bytes().await.unwrap_or_else(|_| Bytes::new());
+
+                                    let mut response_builder = Response::builder().status(status);
+
+                                    for (key, value) in headers.iter() {
+                                        response_builder = response_builder.header(key, value);
+                                    }
+
+                                    let response = response_builder.body(body.to_vec()).unwrap();
+                                    let _ = send_response(&mut socket, response, req_opt).await;
+                                    handled = true;
+                                    break;
+                                }
+                                Err(_) => {
+                                    let response = error_response(StatusCode::BAD_GATEWAY);
+                                    let _ = send_response(&mut socket, response, req_opt).await;
+                                    handled = true;
+                                    break;
+                                }
                             }
                         }
                     }
-
-                    if !handled {
-                        let response = error_response(StatusCode::NOT_FOUND);
+                    Directive::Redir { destination } => {
+                        let dest = destination.replace("{uri}", request.uri().path());
+                        let response = Response::builder()
+                            .status(StatusCode::FOUND)
+                            .header("Location", &dest)
+                            .body(Vec::new()) // Empty body for redirects
+                            .unwrap();
                         let _ = send_response(&mut socket, response, req_opt).await;
+                        handled = true;
+                        break;
                     }
                 }
-                Err(_) => return,
+            }
+
+            if !handled {
+                let response = error_response(StatusCode::NOT_FOUND);
+                let _ = send_response(&mut socket, response, req_opt).await;
             }
         });
     }
@@ -191,7 +199,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 async fn send_response_file(
     socket: &mut tokio::net::TcpStream,
     response: Response<impl AsyncReadExt + Unpin>,
-    req_opt: Option<&Request<()>>
+    req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>> {
     if let Some(req) = req_opt {
         debug!("{:?}", req);
@@ -314,7 +322,6 @@ fn parse_request(req_str: &str) -> Option<Request<()>> {
 
     builder.body(()).ok()
 }
-
 
 
 fn error_response(status: StatusCode) -> Response<Vec<u8>> {
