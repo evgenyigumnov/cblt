@@ -9,7 +9,7 @@ repository = "https://github.com/evgenyigumnov/cblt"
 license = "MIT"
 description = "Safe and fast minimalistic web server, written in Rust, that serves files from a directory and proxies requests to another server."
 keywords = ["web-server", "http", "proxy", "reverse-proxy", "file-server"]
-categories = ["web-programming", "network-programming", "development-tools", "utilities"]
+categories = ["web-programming", "network-programming", "development-tools"]
 
 
 [[bin]]
