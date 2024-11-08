@@ -11,12 +11,13 @@ description = "Safe and fast minimalistic web server, written in Rust, that serv
 keywords = ["web-server", "http", "proxy", "reverse-proxy", "file-server"]
 categories = ["web-programming", "network-programming", "development-tools"]
 
+exclude = ["benchmark", "image_huge.png"]
+
 
 [[bin]]
 name = "cblt"
 path = "src/main.rs"
 
-exclude = ["benchmark", "image_huge.png"]
 
 [dependencies]
 tokio = { version = "1.41.0", features = ["full"] }
