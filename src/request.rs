@@ -40,3 +40,23 @@ pub fn parse_request(req_str: &str) -> Option<Request<()>> {
 }
 
 
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use crate::request::parse_request;
+
+    #[test]
+    fn test_simple() ->  Result<(), Box<dyn Error>> {
+
+        let request_str = r#"GET / HTTP/1.1
+Host: example.com
+User-Agent: curl/7.68.0
+Accept: */*
+"#;
+        let req = parse_request(request_str);
+        println!("{:#?}", req);
+
+        Ok(())
+
+    }
+}

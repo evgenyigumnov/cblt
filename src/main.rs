@@ -208,7 +208,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
 #[allow(dead_code)]
-fn only_in_debug() {
+pub fn only_in_debug() {
     let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE) // Set the maximum log level
