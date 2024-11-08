@@ -1,9 +1,9 @@
 use tokio::net::TcpListener;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use http::{Request, Response, StatusCode};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use http::{Response, StatusCode};
 use std::error::Error;
 use std::path::{PathBuf};
-use tokio::{fs, io};
+use tokio::{fs};
 use std::str;
 use log::{debug, info};
 use std::sync::Arc;
@@ -12,12 +12,16 @@ use crate::config::{build_config, Directive};
 use bytes::Bytes;
 use reqwest;
 use tokio::fs::File;
-use tracing::{instrument, Level};
+use tracing::{Level};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
+use crate::request::parse_request;
+use crate::response::{error_response, send_response, send_response_file};
 
 
 mod config;
+mod request;
+mod response;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -202,161 +206,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 
-#[instrument]
-async fn send_response_file(
-    socket: &mut tokio::net::TcpStream,
-    response: Response<impl AsyncReadExt + Unpin + std::fmt::Debug>,
-    req_opt: Option<&Request<()>>,
-) -> Result<(), Box<dyn Error>> {
-    if let Some(req) = req_opt {
-        debug!("{:?}", req);
-        if let Some(host_header) = req.headers().get("Host") {
-            info!(
-                "Request: {} {} {} {}",
-                req.method(),
-                req.uri(),
-                host_header.to_str().unwrap_or(""),
-                response.status().as_u16()
-            );
-        } else {
-            info!(
-                "Request: {} {} {}",
-                req.method(),
-                req.uri(),
-                response.status().as_u16()
-            );
-        }
-    } else {
-        info!("Response: {}", response.status().as_u16());
-    }
-    let (parts, mut body) = response.into_parts();
-
-    // Build and send headers
-    let mut headers = Vec::with_capacity(128);
-    let status_line = format!(
-        "HTTP/1.1 {} {}\r\n",
-        parts.status.as_u16(),
-        parts.status.canonical_reason().unwrap_or("")
-    );
-    headers.extend_from_slice(status_line.as_bytes());
-
-    for (key, value) in parts.headers.iter() {
-        headers.extend_from_slice(key.as_str().as_bytes());
-        headers.extend_from_slice(b": ");
-        headers.extend_from_slice(value.as_bytes());
-        headers.extend_from_slice(b"\r\n");
-    }
-
-    headers.extend_from_slice(b"\r\n");
-    socket.write_all(&headers).await?;
-
-    // Stream the body
-    io::copy(&mut body, socket).await?;
-
-    Ok(())
-}
-
-async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
-    if let Some(req) = req_opt {
-        debug!("{:?}", req);
-        if let Some(host_header) = req.headers().get("Host") {
-            info!("Request: {} {} {} {}", req.method(), req.uri(), host_header.to_str().unwrap_or(""), response.status().as_u16());
-        } else {
-            info!("Request: {} {} {}", req.method(), req.uri(), response.status().as_u16());
-        }
-    } else {
-        info!("Response: {}", response.status().as_u16());
-    }
-    let (parts, body) = response.into_parts();
-
-    // Estimate capacity to reduce reallocations
-    let mut resp_bytes = Vec::with_capacity(128 + body.len());
-    let status_line = format!(
-        "HTTP/1.1 {} {}\r\n",
-        parts.status.as_u16(),
-        parts.status.canonical_reason().unwrap_or("")
-    );
-    resp_bytes.extend_from_slice(status_line.as_bytes());
-
-    for (key, value) in parts.headers.iter() {
-        resp_bytes.extend_from_slice(key.as_str().as_bytes());
-        resp_bytes.extend_from_slice(b": ");
-        resp_bytes.extend_from_slice(value.as_bytes());
-        resp_bytes.extend_from_slice(b"\r\n");
-    }
-
-    resp_bytes.extend_from_slice(b"\r\n");
-    resp_bytes.extend_from_slice(&body);
-
-    socket.write_all(&resp_bytes).await?;
-
-    Ok(())
-}
-
-#[instrument]
-fn parse_request(req_str: &str) -> Option<Request<()>> {
-    let mut lines = req_str.lines();
-
-    // Parse the request line
-    let mut request_line_parts = lines.next()?.split_whitespace();
-    let method = request_line_parts.next()?;
-    let uri = request_line_parts.next()?;
-    let version_str = request_line_parts.next()?;
-    if request_line_parts.next().is_some() {
-        return None;
-    }
-
-    let version = match version_str {
-        "HTTP/1.1" => http::Version::HTTP_11,
-        "HTTP/1.0" => http::Version::HTTP_10,
-        _ => return None,
-    };
-
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(uri)
-        .version(version);
-
-    // Parse headers
-    for line in lines {
-        if line.is_empty() {
-            break;
-        }
-        let mut header_parts = line.splitn(2, ": ");
-        let key = header_parts.next()?;
-        let value = header_parts.next()?;
-        builder = builder.header(key, value);
-    }
-
-    builder.body(()).ok()
-}
-
-
-fn error_response(status: StatusCode) -> Response<Vec<u8>> {
-    let msg = match status {
-        StatusCode::BAD_REQUEST => "Bad request",
-        StatusCode::FORBIDDEN => "Forbidden",
-        StatusCode::NOT_FOUND => "Not found",
-        _ => "Unknown error",
-    };
-
-    Response::builder()
-        .status(status)
-        .body(msg.as_bytes().to_vec())
-        .unwrap()
-}
-
-fn matches_pattern(pattern: &str, path: &str) -> bool {
-    if pattern == "*" {
-        true
-    } else if pattern.ends_with("*") {
-        let prefix = &pattern[..pattern.len() - 1];
-        path.starts_with(prefix)
-    } else {
-        pattern == path
-    }
-}
-
 
 #[allow(dead_code)]
 fn only_in_debug() {
@@ -373,4 +222,15 @@ fn only_in_debug() {
 #[allow(dead_code)]
 fn only_in_production() {
     let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
+}
+
+fn matches_pattern(pattern: &str, path: &str) -> bool {
+    if pattern == "*" {
+        true
+    } else if pattern.ends_with("*") {
+        let prefix = &pattern[..pattern.len() - 1];
+        path.starts_with(prefix)
+    } else {
+        pattern == path
+    }
 }
