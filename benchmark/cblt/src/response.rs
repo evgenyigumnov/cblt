@@ -1,10 +1,8 @@
-use http::header::TRANSFER_ENCODING;
-use http::{HeaderValue, Request, Response, StatusCode};
+use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
-use tokio::io;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::instrument;
 
@@ -36,89 +34,39 @@ pub async fn send_response_file(
     } else {
         info!("Response: {}", response.status().as_u16());
     }
-    let (mut parts, mut body) = response.into_parts();
-
-    // Add Transfer-Encoding: chunked header
-    parts
-        .headers
-        .insert(TRANSFER_ENCODING, HeaderValue::from_static("chunked"));
-
-    // Wrap the socket in a BufWriter
-    let mut writer = BufWriter::new(socket);
+    let (parts, mut body) = response.into_parts();
 
     // Write status line without allocation
-    writer.write_all(b"HTTP/1.1 ").await?;
+    socket.write_all(b"HTTP/1.1 ").await?;
     let mut itoa_buf = itoa::Buffer::new();
     let status_str = itoa_buf.format(parts.status.as_u16());
-    writer.write_all(status_str.as_bytes()).await?;
-    writer.write_all(b" ").await?;
-    writer
+    socket.write_all(status_str.as_bytes()).await?;
+    socket.write_all(b" ").await?;
+    socket
         .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
         .await?;
-    writer.write_all(b"\r\n").await?;
+    socket.write_all(b"\r\n").await?;
 
     // Write headers without allocation
     for (key, value) in parts.headers.iter() {
-        writer.write_all(key.as_str().as_bytes()).await?;
-        writer.write_all(b": ").await?;
-        writer
-            .write_all(value.to_str().unwrap_or("").as_bytes())
-            .await?;
-        writer.write_all(b"\r\n").await?;
+        socket.write_all(key.as_str().as_bytes()).await?;
+        socket.write_all(b": ").await?;
+        socket.write_all(value.as_bytes()).await?;
+        socket.write_all(b"\r\n").await?;
     }
 
     // End headers
-    writer.write_all(b"\r\n").await?;
+    socket.write_all(b"\r\n").await?;
 
-    // Write body with chunked encoding
-    write_chunked_body(&mut body, &mut writer).await?;
+    // Ensure all headers are flushed
+    socket.flush().await?;
+
+    // Copy the body to the socket
+    tokio::io::copy(&mut body, socket).await?;
 
     // Ensure all data is flushed
-    writer.flush().await?;
+    socket.flush().await?;
 
-    Ok(())
-}
-
-const BUFFER_SIZE: usize = 8192;
-const HEX_DIGITS: &[u8] = b"0123456789ABCDEF";
-
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<()>
-where
-    R: AsyncReadExt + Unpin,
-    W: AsyncWriteExt + Unpin,
-{
-    let mut buf = [0u8; BUFFER_SIZE];
-    let mut size_buf = [0u8; 16]; // Buffer for hex chunk size
-
-    loop {
-        let n = reader.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-
-        // Write chunk size in hex without allocation
-        let mut idx = size_buf.len() - 1;
-        let mut size = n;
-        // Convert to hex digits
-        loop {
-            size_buf[idx] = HEX_DIGITS[size % 16];
-            size /= 16;
-            if size == 0 {
-                break;
-            }
-            idx -= 1;
-        }
-        writer.write_all(&size_buf[idx..]).await?;
-        writer.write_all(b"\r\n").await?;
-
-        // Write chunk data
-        writer.write_all(&buf[..n]).await?;
-        writer.write_all(b"\r\n").await?;
-    }
-
-    // Write final chunk
-    writer.write_all(b"0\r\n\r\n").await?;
     Ok(())
 }
 

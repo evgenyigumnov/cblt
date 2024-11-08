@@ -257,7 +257,8 @@ pub fn only_in_debug() {
 
 #[allow(dead_code)]
 fn only_in_production() {
-    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]

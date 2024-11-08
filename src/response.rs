@@ -1,4 +1,4 @@
-use http::{ Request, Response, StatusCode};
+use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
@@ -51,9 +51,7 @@ pub async fn send_response_file(
     for (key, value) in parts.headers.iter() {
         socket.write_all(key.as_str().as_bytes()).await?;
         socket.write_all(b": ").await?;
-        socket
-            .write_all(value.as_bytes())
-            .await?;
+        socket.write_all(value.as_bytes()).await?;
         socket.write_all(b"\r\n").await?;
     }
 
@@ -71,7 +69,6 @@ pub async fn send_response_file(
 
     Ok(())
 }
-
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response(
