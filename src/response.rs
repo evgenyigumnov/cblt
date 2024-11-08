@@ -1,8 +1,8 @@
+use http::header::TRANSFER_ENCODING;
+use http::{HeaderValue, Request, Response, StatusCode};
+use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
-use http::{HeaderValue, Request, Response, StatusCode};
-use http::header::TRANSFER_ENCODING;
-use log::{debug, info};
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::TcpStream;
@@ -38,10 +38,9 @@ pub async fn send_response_file(
     let (mut parts, mut body) = response.into_parts();
 
     // Add Transfer-Encoding: chunked header
-    parts.headers.insert(
-        TRANSFER_ENCODING,
-        HeaderValue::from_static("chunked"),
-    );
+    parts
+        .headers
+        .insert(TRANSFER_ENCODING, HeaderValue::from_static("chunked"));
 
     // Wrap the socket in a BufWriter
     let mut writer = BufWriter::new(socket);
@@ -52,14 +51,18 @@ pub async fn send_response_file(
     let status_str = itoa_buf.format(parts.status.as_u16());
     writer.write_all(status_str.as_bytes()).await?;
     writer.write_all(b" ").await?;
-    writer.write_all(parts.status.canonical_reason().unwrap_or("").as_bytes()).await?;
+    writer
+        .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
+        .await?;
     writer.write_all(b"\r\n").await?;
 
     // Write headers without allocation
     for (key, value) in parts.headers.iter() {
         writer.write_all(key.as_str().as_bytes()).await?;
         writer.write_all(b": ").await?;
-        writer.write_all(value.to_str().unwrap_or("").as_bytes()).await?;
+        writer
+            .write_all(value.to_str().unwrap_or("").as_bytes())
+            .await?;
         writer.write_all(b"\r\n").await?;
     }
 
@@ -79,9 +82,9 @@ const BUFFER_SIZE: usize = 8192;
 const HEX_DIGITS: &[u8] = b"0123456789ABCDEF";
 
 async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<()>
-    where
-        R: AsyncReadExt + Unpin,
-        W: AsyncWriteExt + Unpin,
+where
+    R: AsyncReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
 {
     let mut buf = [0u8; BUFFER_SIZE];
     let mut size_buf = [0u8; 16]; // Buffer for hex chunk size
@@ -118,13 +121,28 @@ async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<(
 }
 
 #[instrument(level = "trace", skip_all)]
-pub async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Vec<u8>>, req_opt: Option<&Request<()>>) -> Result<(), Box<dyn Error>> {
+pub async fn send_response(
+    socket: &mut tokio::net::TcpStream,
+    response: Response<Vec<u8>>,
+    req_opt: Option<&Request<()>>,
+) -> Result<(), Box<dyn Error>> {
     if let Some(req) = req_opt {
         debug!("{:?}", req);
         if let Some(host_header) = req.headers().get("Host") {
-            info!("Request: {} {} {} {}", req.method(), req.uri(), host_header.to_str().unwrap_or(""), response.status().as_u16());
+            info!(
+                "Request: {} {} {} {}",
+                req.method(),
+                req.uri(),
+                host_header.to_str().unwrap_or(""),
+                response.status().as_u16()
+            );
         } else {
-            info!("Request: {} {} {}", req.method(), req.uri(), response.status().as_u16());
+            info!(
+                "Request: {} {} {}",
+                req.method(),
+                req.uri(),
+                response.status().as_u16()
+            );
         }
     } else {
         info!("Response: {}", response.status().as_u16());
@@ -155,7 +173,6 @@ pub async fn send_response(socket: &mut tokio::net::TcpStream, response: Respons
     Ok(())
 }
 
-
 #[instrument(level = "trace", skip_all)]
 pub fn error_response(status: StatusCode) -> Response<Vec<u8>> {
     let msg = match status {
@@ -170,4 +187,3 @@ pub fn error_response(status: StatusCode) -> Response<Vec<u8>> {
         .body(msg.as_bytes().to_vec())
         .unwrap()
 }
-

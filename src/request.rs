@@ -1,14 +1,14 @@
-use http::{Request};
+use http::Request;
 use tracing::instrument;
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
     use crate::only_in_debug;
-    use crate::request::{parse_request};
+    use crate::request::parse_request;
+    use std::error::Error;
 
     #[test]
-    fn test_simple() ->  Result<(), Box<dyn Error>> {
+    fn test_simple() -> Result<(), Box<dyn Error>> {
         only_in_debug();
 
         let request_str = r#"GET / HTTP/1.1
@@ -24,9 +24,7 @@ Accept: */*
     }
 }
 
-
-
-use http::{Version};
+use http::Version;
 use httparse::Status;
 
 #[instrument(level = "trace", skip_all)]
@@ -44,10 +42,7 @@ pub fn parse_request(req_str: &str) -> Option<Request<()>> {
                 _ => return None,
             };
 
-            let mut builder = Request::builder()
-                .method(method)
-                .uri(path)
-                .version(version);
+            let mut builder = Request::builder().method(method).uri(path).version(version);
 
             for header in req.headers.iter() {
                 let name = header.name;
@@ -61,4 +56,3 @@ pub fn parse_request(req_str: &str) -> Option<Request<()>> {
         Err(_) => None,              // Parsing failed
     }
 }
-

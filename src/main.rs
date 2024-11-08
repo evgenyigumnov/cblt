@@ -1,23 +1,22 @@
-use tokio::net::TcpListener;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use http::{Response, StatusCode};
-use std::error::Error;
-use std::path::{PathBuf};
-use tokio::{fs};
-use std::str;
-use log::{debug, info};
-use std::sync::Arc;
-use kdl::KdlDocument;
 use crate::config::{build_config, Directive};
+use crate::request::parse_request;
+use crate::response::{error_response, send_response, send_response_file};
 use bytes::Bytes;
+use http::{Response, StatusCode};
+use kdl::KdlDocument;
+use log::{debug, info};
 use reqwest;
+use std::error::Error;
+use std::path::PathBuf;
+use std::str;
+use std::sync::Arc;
+use tokio::fs;
 use tokio::fs::File;
-use tracing::{instrument, Level, span};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::TcpListener;
+use tracing::{instrument, span, Level};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
-use crate::request::{parse_request};
-use crate::response::{error_response, send_response, send_response_file};
-
 
 mod config;
 mod request;
@@ -156,16 +155,16 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
                     break;
                 }
             }
-            Directive::ReverseProxy { pattern, destination } => {
+            Directive::ReverseProxy {
+                pattern,
+                destination,
+            } => {
                 debug!("Reverse proxy: {} -> {}", pattern, destination);
                 if matches_pattern(pattern, request.uri().path()) {
                     let dest_uri = format!("{}{}", destination, request.uri().path());
                     debug!("Destination URI: {}", dest_uri);
                     let client = reqwest::Client::new();
-                    let mut req_builder = client.request(
-                        request.method().clone(),
-                        &dest_uri,
-                    );
+                    let mut req_builder = client.request(request.method().clone(), &dest_uri);
 
                     for (key, value) in request.headers().iter() {
                         req_builder = req_builder.header(key, value);
@@ -217,22 +216,21 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
     }
 }
 
-
 #[allow(dead_code)]
 pub fn only_in_debug() {
-    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE) // Set the maximum log level
         .with_span_events(FmtSpan::CLOSE)
-
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set subscriber");
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 }
 
 #[allow(dead_code)]
 fn only_in_production() {
-    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
 }
 
 #[instrument(level = "trace", skip_all)]
