@@ -15,7 +15,7 @@ use tokio::fs::File;
 use tracing::{Level};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
-use crate::request::parse_request;
+use crate::request::{parse_requesst};
 use crate::response::{error_response, send_response, send_response_file};
 
 
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             };
 
-            let request = match parse_request(req_str) {
+            let request = match parse_requesst(req_str) {
                 Some(req) => req,
                 None => {
                     let response = error_response(StatusCode::BAD_REQUEST);
