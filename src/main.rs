@@ -12,7 +12,7 @@ use crate::config::{build_config, Directive};
 use bytes::Bytes;
 use reqwest;
 use tokio::fs::File;
-use tracing::{Level};
+use tracing::{instrument, Level};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
 use crate::request::{parse_requesst};
@@ -224,6 +224,7 @@ fn only_in_production() {
     let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
 }
 
+#[instrument]
 fn matches_pattern(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         true
