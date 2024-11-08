@@ -12,14 +12,18 @@ use crate::config::{build_config, Directive};
 use bytes::Bytes;
 use reqwest;
 use tokio::fs::File;
+use tracing::{instrument, Level};
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::FmtSubscriber;
+
 
 mod config;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
 
     info!("Cblt started");
+    only_in_debug();
 
     // Read configuration from Cbltfile
     let cbltfile_content = fs::read_to_string("Cbltfile").await?;
@@ -196,9 +200,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 
+#[instrument]
 async fn send_response_file(
     socket: &mut tokio::net::TcpStream,
-    response: Response<impl AsyncReadExt + Unpin>,
+    response: Response<impl AsyncReadExt + Unpin + std::fmt::Debug>,
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>> {
     if let Some(req) = req_opt {
@@ -286,6 +291,7 @@ async fn send_response(socket: &mut tokio::net::TcpStream, response: Response<Ve
     Ok(())
 }
 
+#[instrument]
 fn parse_request(req_str: &str) -> Option<Request<()>> {
     let mut lines = req_str.lines();
 
@@ -347,4 +353,16 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     } else {
         pattern == path
     }
+}
+
+
+fn only_in_debug() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::TRACE) // Set the maximum log level
+        .with_span_events(FmtSpan::CLOSE)
+
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Failed to set subscriber");
 }
