@@ -23,8 +23,10 @@ mod config;
 async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Cblt started");
+    #[cfg(debug_assertions)]
     only_in_debug();
-
+    #[cfg(not(debug_assertions))]
+    only_in_production();
     // Read configuration from Cbltfile
     let cbltfile_content = fs::read_to_string("Cbltfile").await?;
     let doc: KdlDocument = cbltfile_content.parse()?;
@@ -356,6 +358,7 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
 }
 
 
+#[allow(dead_code)]
 fn only_in_debug() {
     let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
     let subscriber = FmtSubscriber::builder()
@@ -365,4 +368,9 @@ fn only_in_debug() {
         .finish();
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to set subscriber");
+}
+
+#[allow(dead_code)]
+fn only_in_production() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
 }
