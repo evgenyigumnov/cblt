@@ -2,7 +2,7 @@
 
 ![cblt](https://github.com/evgenyigumnov/cblt/raw/HEAD/logo.png)
 
-Safe and fast minimalistic web server, written in Rust, that serves files from a directory.
+Safe and fast minimalistic web server, written in Rust, that serves files from a directory and proxies requests to another server.
 
 ## Project Name Explanation 
 
@@ -20,6 +20,12 @@ curl -H "Host: example.com"  http://127.0.0.1/Cargo.toml
 
 
 ## Benchmark
+Do test with Apache Benchmark (ab) for 300 requests with 100 concurrent connections. Download 5mb image from example.com/logo_huge.png
+
+```bash
+ab -c 100 -n 300 http://example.com/logo_huge.png
+``` 
+
 | Percent | Cblt | Nginx | Caddy |
 |---------|------|-------|-------|
 | 50%     | 1956 | 1941  | 1768  |
