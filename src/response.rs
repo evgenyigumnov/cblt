@@ -8,7 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::TcpStream;
 use tracing::{instrument, Level, span};
 
-#[instrument(level = "trace", skip_all)]
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_file(
     socket: &mut TcpStream,
     response: Response<impl AsyncReadExt + Unpin + Debug>,
@@ -81,7 +81,7 @@ pub async fn send_response_file(
 const BUFFER_SIZE: usize = 8192;
 const HEX_DIGITS: &[u8] = b"0123456789ABCDEF";
 
-#[instrument(level = "trace", skip_all)]
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn write_chunked_body<R, W>(mut reader: R, writer: &mut W) -> io::Result<()>
 where
     R: AsyncReadExt + Unpin,
@@ -121,7 +121,7 @@ where
     Ok(())
 }
 
-#[instrument(level = "trace", skip_all)]
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response(
     socket: &mut tokio::net::TcpStream,
     response: Response<Vec<u8>>,
@@ -174,7 +174,7 @@ pub async fn send_response(
     Ok(())
 }
 
-#[instrument(level = "trace", skip_all)]
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub fn error_response(status: StatusCode) -> Response<Vec<u8>> {
     let msg = match status {
         StatusCode::BAD_REQUEST => "Bad request",

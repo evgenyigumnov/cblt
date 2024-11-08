@@ -27,7 +27,7 @@ Accept: */*
 use http::Version;
 use httparse::Status;
 
-#[instrument(level = "trace", skip_all)]
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub fn parse_request(req_str: &str) -> Option<Request<()>> {
     let mut headers = [httparse::EMPTY_HEADER; 16]; // Adjust the size as needed
     let mut req = httparse::Request::new(&mut headers);
