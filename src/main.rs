@@ -126,8 +126,15 @@ async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
                     directive_process(&mut stream, &server).await;
                 }
                 Some(ref acceptor) => {
-                    let mut stream = acceptor.accept(stream).await?;
-                    directive_process(&mut stream, &server).await;
+                    match acceptor.accept(stream).await {
+                        Ok(mut stream) => {
+                            directive_process(&mut stream, &server).await;
+                        }
+                        Err(err) => {
+                            error!("Error: {}", err);
+                        }
+                    }
+
                 }
             }
         }
@@ -147,14 +154,23 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
                 Some(h) => h.to_str().unwrap_or(""),
                 None => "",
             };
-            let host_config = match server.hosts.get(host) {
-                Some(cfg) => cfg,
+
+            // find host starting with "*"
+            let cfg_opt  = server.hosts.iter().find(|(k, _)| k.starts_with("*"));
+            let host_config = match cfg_opt {
                 None => {
-                    let req_opt = Some(&request);
-                    let response = error_response(StatusCode::FORBIDDEN);
-                    let _ = send_response(socket, response, req_opt).await;
-                    return;
+                    let host_config = match server.hosts.get(host) {
+                        Some(cfg) => cfg,
+                        None => {
+                            let req_opt = Some(&request);
+                            let response = error_response(StatusCode::FORBIDDEN);
+                            let _ = send_response(socket, response, req_opt).await;
+                            return;
+                        }
+                    };
+                    host_config
                 }
+                Some((_, cfg)) => cfg
             };
 
             let mut root_path = None;

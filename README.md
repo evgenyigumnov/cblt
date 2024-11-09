@@ -39,7 +39,7 @@ curl --insecure https:/127.0.0.1:1212/Cbltfile
 **Cbltfile** examples:
 ### File server
 ```kdl
-"example.com" {
+"*:80" {
     root "*" "/path/to/folder"
     file_server
 }
