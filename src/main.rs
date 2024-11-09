@@ -1,18 +1,14 @@
 use std::collections::HashMap;
 use crate::config::{build_config, Directive};
 use crate::request::parse_request;
-use crate::response::{error_response, send_response, send_response_file};
-use bytes::Bytes;
+use crate::response::{error_response, send_response};
 use http::{Request, Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
-use reqwest;
 use std::error::Error;
-use std::path::PathBuf;
 use std::str;
 use std::sync::Arc;
 use tokio::fs;
-use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::TcpListener;
 use tracing::Level;
@@ -27,6 +23,9 @@ use tokio_rustls::{rustls, TlsAcceptor};
 mod config;
 mod request;
 mod response;
+
+mod file_server;
+mod reverse_proxy;
 
 #[derive(Debug)]
 pub struct Server {
@@ -188,7 +187,7 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
-                        file_server(&root_path, &request, &mut handled, socket, req_opt).await;
+                        file_server::directive(&root_path, &request, &mut handled, socket, req_opt).await;
                         break;
                     }
                     Directive::ReverseProxy {
@@ -197,7 +196,7 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
                     } => {
                         #[cfg(debug_assertions)]
                         debug!("Reverse proxy: {} -> {}", pattern, destination);
-                        reverse_proxy(&request, &mut handled, socket, req_opt, pattern, destination).await;
+                        reverse_proxy::directive(&request, &mut handled, socket, req_opt, pattern, destination).await;
                         break;
                     }
                     Directive::Redir { destination } => {
@@ -218,47 +217,6 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
             if !handled {
                 let response = error_response(StatusCode::NOT_FOUND);
                 let _ = send_response(socket, response, req_opt).await;
-            }
-        }
-    }
-}
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn reverse_proxy<S>(request: &Request<()>, handled: &mut bool, socket: &mut S, req_opt: Option<&Request<()>>, pattern: &String, destination: &String) where S: AsyncReadExt + AsyncWriteExt + Unpin {
-
-    if matches_pattern(pattern, request.uri().path()) {
-        let dest_uri = format!("{}{}", destination, request.uri().path());
-        #[cfg(debug_assertions)]
-        debug!("Destination URI: {}", dest_uri);
-        let client = reqwest::Client::new();
-        let mut req_builder =
-            client.request(request.method().clone(), &dest_uri);
-
-        for (key, value) in request.headers().iter() {
-            req_builder = req_builder.header(key, value);
-        }
-
-        match req_builder.send().await {
-            Ok(resp) => {
-                let status = resp.status();
-                let headers = resp.headers().clone();
-                let body = resp.bytes().await.unwrap_or_else(|_| Bytes::new());
-
-                let mut response_builder = Response::builder().status(status);
-
-                for (key, value) in headers.iter() {
-                    response_builder = response_builder.header(key, value);
-                }
-
-                let response = response_builder.body(body.to_vec()).unwrap();
-                let _ = send_response(socket, response, req_opt).await;
-                *handled = true;
-                return;
-            }
-            Err(_) => {
-                let response = error_response(StatusCode::BAD_GATEWAY);
-                let _ = send_response(socket, response, req_opt).await;
-                *handled = true;
-                return;
             }
         }
     }
@@ -303,61 +261,7 @@ async fn read_from_socket<S>(socket: &mut S) -> Option<Request<()>>
     Some(request)
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn file_server<S>(
-    root_path: &Option<String>,
-    request: &Request<()>,
-    handled: &mut bool,
-    socket: &mut S,
-    req_opt: Option<&Request<()>>,
-)
-    where S: AsyncWriteExt + Unpin
-{
-    if let Some(root) = root_path {
-        let mut file_path = PathBuf::from(root);
-        file_path.push(request.uri().path().trim_start_matches('/'));
 
-        if file_path.is_dir() {
-            file_path.push("index.html");
-        }
-
-        match File::open(&file_path).await {
-            Ok(file) => {
-                let content_length = file_size(&file).await;
-                let response = file_response(file, content_length);
-                let _ = send_response_file(socket, response, req_opt).await;
-                *handled = true;
-                return;
-            }
-            Err(_) => {
-                let response = error_response(StatusCode::NOT_FOUND);
-                let _ = send_response(&mut *socket, response, req_opt).await;
-                *handled = true;
-                return;
-            }
-        }
-    } else {
-        let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
-        let _ = send_response(&mut *socket, response, req_opt).await;
-        *handled = true;
-        return;
-    }
-}
-
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn file_size(file: &File) -> u64 {
-    let metadata = file.metadata().await.unwrap();
-    metadata.len()
-}
-
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-fn file_response(file: File, content_length: u64) -> Response<File> {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Length", content_length)
-        .body(file)
-        .unwrap()
-}
 
 #[allow(dead_code)]
 pub fn only_in_debug() {
