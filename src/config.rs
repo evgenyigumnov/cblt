@@ -1,5 +1,5 @@
 use kdl::KdlDocument;
-use log::debug;
+use log::{debug, error};
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -105,6 +105,10 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
             return Err(format!("No directives specified for host {}", hostname).into());
         }
 
+        if hosts.contains_key(&hostname) {
+            error!("Host '{}' already exists", hostname);
+            panic!("Host '{}' already exists", hostname);
+        }
         hosts.insert(hostname,  directives );
     }
 

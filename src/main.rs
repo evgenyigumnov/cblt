@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let parts: Vec<&str> = host.split(":").collect();
             port = parts[1].parse().unwrap();
         }
-        println!("Host: {}, Port: {}", host, port);
+        debug!("Host: {}, Port: {}", host, port);
         servers.entry(port).and_modify(
             |s| {
                 let hosts = &mut s.hosts;

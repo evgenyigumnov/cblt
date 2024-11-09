@@ -52,7 +52,7 @@ curl --insecure https:/127.0.0.1:1212/Cbltfile
     file_server
 }
 ```
-### TLS support ([docs]())
+### TLS support ([docs](https://github.com/evgenyigumnov/cblt/blob/main/tls.md))
 ```kdl
 "example.com" {
     root "*" "/path/to/folder"
