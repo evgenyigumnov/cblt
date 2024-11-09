@@ -1,24 +1,24 @@
-use std::collections::HashMap;
 use crate::config::{build_config, Directive};
-use crate::request::{socket_to_request};
+use crate::request::socket_to_request;
 use crate::response::{error_response, send_response};
 use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use std::collections::HashMap;
 use std::error::Error;
 use std::str;
 use std::sync::Arc;
 use tokio::fs;
-use tokio::io::{ AsyncReadExt};
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tokio_rustls::{rustls, TlsAcceptor};
+use tracing::instrument;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
-use tracing::instrument;
-use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use tokio::io::{AsyncWriteExt};
-use tokio_rustls::{rustls, TlsAcceptor};
 
 mod config;
 mod request;
@@ -47,7 +47,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = build_config(&doc)?;
 
-
     let mut servers: HashMap<u16, Server> = HashMap::new(); // Port -> Server
 
     for (host, directives) in config {
@@ -66,23 +65,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
             port = parts[1].parse().unwrap();
         }
         debug!("Host: {}, Port: {}", host, port);
-        servers.entry(port).and_modify(
-            |s| {
+        servers
+            .entry(port)
+            .and_modify(|s| {
                 let hosts = &mut s.hosts;
                 hosts.insert(host.to_string(), directives.clone());
                 s.cert = cert_path.clone();
                 s.key = key_path.clone();
-            },
-        ).or_insert({
-            let mut hosts = HashMap::new();
-            hosts.insert(host.to_string(), directives.clone());
-            Server {
-                port,
-                hosts,
-                cert: cert_path,
-                key: key_path,
-            }
-        });
+            })
+            .or_insert({
+                let mut hosts = HashMap::new();
+                hosts.insert(host.to_string(), directives.clone());
+                Server {
+                    port,
+                    hosts,
+                    cert: cert_path,
+                    key: key_path,
+                }
+            });
     }
 
     debug!("{:#?}", servers);
@@ -104,44 +104,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
-        let acceptor = if server.cert.is_some() {
-            let certs = CertificateDer::pem_file_iter(server.cert.clone().unwrap())?.collect::<Result<Vec<_>, _>>()?;
-            let key = PrivateKeyDer::from_pem_file(server.key.clone().unwrap())?;
-            let server_config = rustls::ServerConfig::builder()
-                .with_no_client_auth()
-                .with_single_cert(certs, key)?;
-            Some(TlsAcceptor::from(Arc::new(server_config)))
-        } else {
-            None
-        };
+    let acceptor = if server.cert.is_some() {
+        let certs = CertificateDer::pem_file_iter(server.cert.clone().unwrap())?
+            .collect::<Result<Vec<_>, _>>()?;
+        let key = PrivateKeyDer::from_pem_file(server.key.clone().unwrap())?;
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)?;
+        Some(TlsAcceptor::from(Arc::new(server_config)))
+    } else {
+        None
+    };
 
-        let addr = format!("0.0.0.0:{}", server.port);
-        let listener = TcpListener::bind(addr).await?;
+    let addr = format!("0.0.0.0:{}", server.port);
+    let listener = TcpListener::bind(addr).await?;
 
-        loop {
-            let (mut stream, _) = listener.accept().await?;
-            match acceptor {
-                None => {
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        match acceptor {
+            None => {
+                directive_process(&mut stream, &server).await;
+            }
+            Some(ref acceptor) => match acceptor.accept(stream).await {
+                Ok(mut stream) => {
                     directive_process(&mut stream, &server).await;
                 }
-                Some(ref acceptor) => {
-                    match acceptor.accept(stream).await {
-                        Ok(mut stream) => {
-                            directive_process(&mut stream, &server).await;
-                        }
-                        Err(err) => {
-                            error!("Error: {}", err);
-                        }
-                    }
-
+                Err(err) => {
+                    error!("Error: {}", err);
                 }
-            }
+            },
         }
+    }
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn directive_process<S>(socket: &mut S, server: &Server)
-    where S: AsyncReadExt + AsyncWriteExt + Unpin
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     match socket_to_request(socket).await {
         None => {
@@ -155,7 +154,7 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
             };
 
             // find host starting with "*"
-            let cfg_opt  = server.hosts.iter().find(|(k, _)| k.starts_with("*"));
+            let cfg_opt = server.hosts.iter().find(|(k, _)| k.starts_with("*"));
             let host_config = match cfg_opt {
                 None => {
                     let host_config = match server.hosts.get(host) {
@@ -169,7 +168,7 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
                     };
                     host_config
                 }
-                Some((_, cfg)) => cfg
+                Some((_, cfg)) => cfg,
             };
 
             let mut root_path = None;
@@ -187,7 +186,8 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
-                        file_server::directive(&root_path, &request, &mut handled, socket, req_opt).await;
+                        file_server::directive(&root_path, &request, &mut handled, socket, req_opt)
+                            .await;
                         break;
                     }
                     Directive::ReverseProxy {
@@ -196,7 +196,15 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
                     } => {
                         #[cfg(debug_assertions)]
                         debug!("Reverse proxy: {} -> {}", pattern, destination);
-                        reverse_proxy::directive(&request, &mut handled, socket, req_opt, pattern, destination).await;
+                        reverse_proxy::directive(
+                            &request,
+                            &mut handled,
+                            socket,
+                            req_opt,
+                            pattern,
+                            destination,
+                        )
+                        .await;
                         break;
                     }
                     Directive::Redir { destination } => {
@@ -221,8 +229,6 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
         }
     }
 }
-
-
 
 #[allow(dead_code)]
 pub fn only_in_debug() {

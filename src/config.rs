@@ -83,7 +83,10 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                         if args.len() >= 2 {
                             let cert_path = args.get(0).unwrap().to_string();
                             let key_path = args.get(1).unwrap().to_string();
-                            directives.push(Directive::Tls { cert: cert_path, key: key_path });
+                            directives.push(Directive::Tls {
+                                cert: cert_path,
+                                key: key_path,
+                            });
                         } else {
                             return Err(
                                 format!("Invalid 'tls' directive for host {}", hostname).into()
@@ -109,7 +112,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
             error!("Host '{}' already exists", hostname);
             panic!("Host '{}' already exists", hostname);
         }
-        hosts.insert(hostname,  directives );
+        hosts.insert(hostname, directives);
     }
 
     #[cfg(debug_assertions)]
@@ -162,11 +165,8 @@ example1.com {
         let config = build_config(&doc)?;
         println!("{:#?}", config);
 
-
-
         Ok(())
     }
-
 
     #[test]
     fn test_tls() -> Result<(), Box<dyn Error>> {
@@ -183,5 +183,4 @@ example.com {
 
         Ok(())
     }
-
 }

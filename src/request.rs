@@ -1,15 +1,15 @@
-use std::str;
-use http::{Request, StatusCode};
-use tracing::instrument;
-use http::Version;
-use httparse::Status;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use crate::response::{error_response, send_response};
-
+use http::Version;
+use http::{Request, StatusCode};
+use httparse::Status;
+use std::str;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn socket_to_request<S>(socket: &mut S) -> Option<Request<()>>
-    where S: AsyncReadExt + AsyncWriteExt + Unpin
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let mut buf = Vec::with_capacity(4096);
     let mut reader = BufReader::new(&mut *socket);
@@ -45,8 +45,6 @@ pub async fn socket_to_request<S>(socket: &mut S) -> Option<Request<()>>
 
     Some(request)
 }
-
-
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub fn parse_request(req_str: &str) -> Option<Request<()>> {

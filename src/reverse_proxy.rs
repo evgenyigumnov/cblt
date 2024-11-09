@@ -1,21 +1,28 @@
+use crate::matches_pattern;
+use crate::response::{error_response, send_response};
 use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
-use crate::matches_pattern;
-use crate::response::{error_response, send_response};
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn directive<S>(request: &Request<()>, handled: &mut bool, socket: &mut S, req_opt: Option<&Request<()>>, pattern: &String, destination: &String) where S: AsyncReadExt + AsyncWriteExt + Unpin {
-
+pub async fn directive<S>(
+    request: &Request<()>,
+    handled: &mut bool,
+    socket: &mut S,
+    req_opt: Option<&Request<()>>,
+    pattern: &String,
+    destination: &String,
+) where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
+{
     if matches_pattern(pattern, request.uri().path()) {
         let dest_uri = format!("{}{}", destination, request.uri().path());
         #[cfg(debug_assertions)]
         debug!("Destination URI: {}", dest_uri);
         let client = reqwest::Client::new();
-        let mut req_builder =
-            client.request(request.method().clone(), &dest_uri);
+        let mut req_builder = client.request(request.method().clone(), &dest_uri);
 
         for (key, value) in request.headers().iter() {
             req_builder = req_builder.header(key, value);

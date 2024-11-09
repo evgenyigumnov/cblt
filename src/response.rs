@@ -11,7 +11,8 @@ pub async fn send_response_file<S>(
     response: Response<impl AsyncReadExt + Unpin + Debug>,
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>>
-where S: AsyncWriteExt + Unpin
+where
+    S: AsyncWriteExt + Unpin,
 {
     if let Some(req) = req_opt {
         #[cfg(debug_assertions)]
@@ -78,7 +79,7 @@ pub async fn send_response<S>(
     req_opt: Option<&Request<()>>,
 ) -> Result<(), Box<dyn Error>>
 where
-    S: AsyncWriteExt + Unpin
+    S: AsyncWriteExt + Unpin,
 {
     #[cfg(debug_assertions)]
     if let Some(req) = req_opt {

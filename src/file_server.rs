@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use crate::response::{error_response, send_response, send_response_file};
 use http::{Request, Response, StatusCode};
+use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tracing::instrument;
-use crate::response::{error_response, send_response, send_response_file};
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn directive<S>(
@@ -12,8 +12,8 @@ pub async fn directive<S>(
     handled: &mut bool,
     socket: &mut S,
     req_opt: Option<&Request<()>>,
-)
-    where S: AsyncWriteExt + Unpin
+) where
+    S: AsyncWriteExt + Unpin,
 {
     if let Some(root) = root_path {
         let mut file_path = PathBuf::from(root);
