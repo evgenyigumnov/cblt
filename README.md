@@ -33,6 +33,11 @@ docker run -d -p 80:80 --restart unless-stopped --name cblt cblt:0.0.1
 ```
 curl -H "Host: example.com"  http://127.0.0.1/
 curl --insecure https:/127.0.0.1:1212/
+curl -X POST http://127.0.0.1/api/entry \
+-H "User-Agent: curl/7.68.0" \
+-H "Accept: */*" \
+-H "Content-Type: application/json" \
+-d '{"key":"value"}'
 ```
 
 ## "Cbltfile" configuration examples

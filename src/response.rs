@@ -9,7 +9,7 @@ use tracing::instrument;
 pub async fn send_response_file<S>(
     socket: &mut S,
     response: Response<impl AsyncReadExt + Unpin + Debug>,
-    req_opt: Option<&Request<()>>,
+    req_opt: Option<&Request<Vec<u8>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     S: AsyncWriteExt + Unpin,
@@ -76,7 +76,7 @@ where
 pub async fn send_response<S>(
     socket: &mut S,
     response: Response<Vec<u8>>,
-    req_opt: Option<&Request<()>>,
+    req_opt: Option<&Request<Vec<u8>>>,
 ) -> Result<(), Box<dyn Error>>
 where
     S: AsyncWriteExt + Unpin,

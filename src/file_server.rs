@@ -8,10 +8,10 @@ use tracing::instrument;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn directive<S>(
     root_path: &Option<String>,
-    request: &Request<()>,
+    request: &Request<Vec<u8>>,
     handled: &mut bool,
     socket: &mut S,
-    req_opt: Option<&Request<()>>,
+    req_opt: Option<&Request<Vec<u8>>>,
 ) where
     S: AsyncWriteExt + Unpin,
 {

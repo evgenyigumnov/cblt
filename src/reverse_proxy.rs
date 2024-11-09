@@ -8,10 +8,10 @@ use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn directive<S>(
-    request: &Request<()>,
+    request: &Request<Vec<u8>>,
     handled: &mut bool,
     socket: &mut S,
-    req_opt: Option<&Request<()>>,
+    req_opt: Option<&Request<Vec<u8>>>,
     pattern: &String,
     destination: &String,
 ) where
@@ -26,6 +26,10 @@ pub async fn directive<S>(
 
         for (key, value) in request.headers().iter() {
             req_builder = req_builder.header(key, value);
+        }
+        let body = request.body();
+        if !body.is_empty() {
+            req_builder = req_builder.body(body.clone());
         }
 
         match req_builder.send().await {
