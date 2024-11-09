@@ -7,11 +7,13 @@ use tokio::net::TcpStream;
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response_file(
-    socket: &mut TcpStream,
+pub async fn send_response_file<S>(
+    socket: &mut S,
     response: Response<impl AsyncReadExt + Unpin + Debug>,
     req_opt: Option<&Request<()>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+where S: AsyncWriteExt + Unpin
+{
     if let Some(req) = req_opt {
         #[cfg(debug_assertions)]
         debug!("{:?}", req);
@@ -71,11 +73,14 @@ pub async fn send_response_file(
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response(
-    socket: &mut tokio::net::TcpStream,
+pub async fn send_response<S>(
+    socket: &mut S,
     response: Response<Vec<u8>>,
     req_opt: Option<&Request<()>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+where
+    S: AsyncWriteExt + Unpin
+{
     #[cfg(debug_assertions)]
     if let Some(req) = req_opt {
         debug!("{:?}", req);

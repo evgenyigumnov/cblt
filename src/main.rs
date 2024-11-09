@@ -12,17 +12,23 @@ use std::str;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::TcpListener;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
-
 use tracing::instrument;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio::io::{copy, sink, split, AsyncWriteExt};
+use tokio_rustls::{rustls, TlsAcceptor};
 
 mod config;
 mod request;
 mod response;
+
+
+const TLS: bool = false;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -35,21 +41,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cbltfile_content = fs::read_to_string("Cbltfile").await?;
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = Arc::new(build_config(&doc)?);
+    let acceptor = if TLS {
+        let certs = CertificateDer::pem_file_iter("domain.crt")?.collect::<Result<Vec<_>, _>>()?;
+        let key = PrivateKeyDer::from_pem_file("domain.key")?;
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)?;
+         Some(TlsAcceptor::from(Arc::new(server_config)))
+    } else {
+        None
+    };
 
-    let listener = TcpListener::bind("0.0.0.0:80").await?;
+    let addr = if TLS {
+        "0.0.0.0:443"
+    } else {
+        "0.0.0.0:80"
+    };
+    let listener = TcpListener::bind(addr).await?;
 
     loop {
-        let (mut socket, _) = listener.accept().await?;
         let config = Arc::clone(&config);
+        let (mut stream, _) = listener.accept().await?;
+        match acceptor {
+            None => {
+                tokio::spawn(async move {
+                    directive_process(&mut stream, config).await;
+                });
+            }
+            Some(ref acceptor) => {
+                let mut stream = acceptor.accept(stream).await?;
+                tokio::spawn(async move {
+                    directive_process(&mut stream, config).await;
+                });
+            }
 
-        tokio::spawn(async move {
-            directive_process(&mut socket, config).await;
-        });
+        }
+
+
     }
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<config::Config>) {
+async fn directive_process<S>(socket: &mut S, config: Arc<config::Config>)
+where S: AsyncReadExt + AsyncWriteExt + Unpin
+{
     match read_from_socket(socket).await {
         None => {
             return;
@@ -155,7 +190,9 @@ async fn directive_process(socket: &mut tokio::net::TcpStream, config: Arc<confi
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn read_from_socket(socket: &mut tokio::net::TcpStream) -> Option<Request<()>> {
+async fn read_from_socket<S>(socket: &mut S) -> Option<Request<()>>
+where S: AsyncReadExt + AsyncWriteExt + Unpin
+{
     let mut buf = Vec::with_capacity(4096);
     let mut reader = BufReader::new(&mut *socket);
     let mut n = 0;
@@ -192,13 +229,15 @@ async fn read_from_socket(socket: &mut tokio::net::TcpStream) -> Option<Request<
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn file_server(
+async fn file_server<S>(
     root_path: &Option<String>,
     request: &Request<()>,
     handled: &mut bool,
-    socket: &mut tokio::net::TcpStream,
+    socket: &mut S,
     req_opt: Option<&Request<()>>,
-) {
+)
+where S: AsyncWriteExt + Unpin
+{
     if let Some(root) = root_path {
         let mut file_path = PathBuf::from(root);
         file_path.push(request.uri().path().trim_start_matches('/'));

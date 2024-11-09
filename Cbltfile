@@ -3,3 +3,7 @@ example.com {
     root "*" "."
     file_server
 }
+"127.0.0.1" {
+    root "*" "."
+    file_server
+}
