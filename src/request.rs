@@ -2,8 +2,8 @@ use crate::response::{error_response, send_response};
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;
-use std::str;
 use log::debug;
+use std::str;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::instrument;
 
@@ -129,7 +129,7 @@ pub fn parse_request_headers(req_str: &str) -> Option<(Request<Vec<u8>>, Option<
 #[cfg(test)]
 mod tests {
     use crate::only_in_debug;
-    use crate::request::{parse_request_headers};
+    use crate::request::parse_request_headers;
     use std::error::Error;
 
     #[test]
