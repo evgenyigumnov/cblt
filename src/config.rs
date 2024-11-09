@@ -3,16 +3,6 @@ use log::debug;
 use std::collections::HashMap;
 use std::error::Error;
 
-#[derive(Debug)]
-pub struct Config {
-    pub hosts: HashMap<String, HostConfig>,
-}
-
-#[derive(Debug)]
-pub struct HostConfig {
-    pub directives: Vec<Directive>,
-}
-
 #[derive(Debug, Clone)]
 pub enum Directive {
     Root {
@@ -33,7 +23,7 @@ pub enum Directive {
     },
 }
 
-pub fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
+pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, Box<dyn Error>> {
     let mut hosts = HashMap::new();
 
     for node in doc.nodes() {
@@ -115,13 +105,12 @@ pub fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
             return Err(format!("No directives specified for host {}", hostname).into());
         }
 
-        hosts.insert(hostname, HostConfig { directives });
+        hosts.insert(hostname,  directives );
     }
 
-    let ret = Config { hosts };
     #[cfg(debug_assertions)]
-    debug!("{:#?}", ret);
-    Ok(ret)
+    debug!("{:#?}", hosts);
+    Ok(hosts)
 }
 
 fn get_string_args<'a>(node: &'a kdl::KdlNode) -> Vec<&'a str> {

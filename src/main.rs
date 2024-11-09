@@ -5,7 +5,7 @@ use crate::response::{error_response, send_response, send_response_file};
 use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use kdl::KdlDocument;
-use log::{debug, info};
+use log::{debug, error, info};
 use reqwest;
 use std::error::Error;
 use std::path::PathBuf;
@@ -28,8 +28,13 @@ mod config;
 mod request;
 mod response;
 
-
-const TLS: bool = false;
+#[derive(Debug)]
+pub struct Server {
+    pub port: u16,
+    pub hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
+    pub cert: Option<String>,
+    pub key: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -41,23 +46,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Read configuration from Cbltfile
     let cbltfile_content = fs::read_to_string("Cbltfile").await?;
     let doc: KdlDocument = cbltfile_content.parse()?;
-    let config = Arc::new(build_config(&doc)?);
+    let config = build_config(&doc)?;
 
-    #[derive(Debug)]
-    struct Server {
-        port: u16,
-        hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
-        cert: Option<String>,
-        key: Option<String>,
-    }
 
     let mut servers: HashMap<u16, Server> = HashMap::new(); // Port -> Server
 
-    for (host, cfg) in &config.hosts {
+    for (host, directives) in config {
         let mut port = 80;
         let mut cert_path = None;
         let mut key_path = None;
-        cfg.directives.iter().for_each(|d| {
+        directives.iter().for_each(|d| {
             if let Directive::Tls { cert, key } = d {
                 port = 443;
                 cert_path = Some(cert.to_string());
@@ -72,13 +70,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         servers.entry(port).and_modify(
             |s| {
                 let hosts = &mut s.hosts;
-                hosts.insert(host.to_string(), cfg.directives.clone());
+                hosts.insert(host.to_string(), directives.clone());
                 s.cert = cert_path.clone();
                 s.key = key_path.clone();
             },
         ).or_insert({
             let mut hosts = HashMap::new();
-            hosts.insert(host.to_string(), cfg.directives.clone());
+            hosts.insert(host.to_string(), directives.clone());
             Server {
                 port,
                 hosts,
@@ -90,45 +88,53 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     debug!("{:#?}", servers);
 
-    let acceptor = if TLS {
-        let certs = CertificateDer::pem_file_iter("domain.crt")?.collect::<Result<Vec<_>, _>>()?;
-        let key = PrivateKeyDer::from_pem_file("domain.key")?;
-        let server_config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)?;
-        Some(TlsAcceptor::from(Arc::new(server_config)))
-    } else {
-        None
-    };
-
-    let addr = if TLS {
-        "0.0.0.0:443"
-    } else {
-        "0.0.0.0:80"
-    };
-    let listener = TcpListener::bind(addr).await?;
-
-    loop {
-        let config = Arc::clone(&config);
-        let (mut stream, _) = listener.accept().await?;
-        match acceptor {
-            None => {
-                tokio::spawn(async move {
-                    directive_process(&mut stream, config).await;
-                });
+    for (_, server) in servers {
+        tokio::spawn(async move {
+            match server_task(&server).await {
+                Ok(_) => {}
+                Err(err) => {
+                    error!("Error: {}", err);
+                }
             }
-            Some(ref acceptor) => {
-                let mut stream = acceptor.accept(stream).await?;
-                tokio::spawn(async move {
-                    directive_process(&mut stream, config).await;
-                });
+        });
+    }
+
+    tokio::signal::ctrl_c().await?;
+
+    Ok(())
+}
+
+async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
+        let acceptor = if server.cert.is_some() {
+            let certs = CertificateDer::pem_file_iter(server.cert.clone().unwrap())?.collect::<Result<Vec<_>, _>>()?;
+            let key = PrivateKeyDer::from_pem_file(server.key.clone().unwrap())?;
+            let server_config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)?;
+            Some(TlsAcceptor::from(Arc::new(server_config)))
+        } else {
+            None
+        };
+
+        let addr = format!("0.0.0.0:{}", server.port);
+        let listener = TcpListener::bind(addr).await?;
+
+        loop {
+            let (mut stream, _) = listener.accept().await?;
+            match acceptor {
+                None => {
+                    directive_process(&mut stream, &server).await;
+                }
+                Some(ref acceptor) => {
+                    let mut stream = acceptor.accept(stream).await?;
+                    directive_process(&mut stream, &server).await;
+                }
             }
         }
-    }
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn directive_process<S>(socket: &mut S, config: Arc<config::Config>)
+async fn directive_process<S>(socket: &mut S, server: &Server)
     where S: AsyncReadExt + AsyncWriteExt + Unpin
 {
     match read_from_socket(socket).await {
@@ -141,7 +147,7 @@ async fn directive_process<S>(socket: &mut S, config: Arc<config::Config>)
                 Some(h) => h.to_str().unwrap_or(""),
                 None => "",
             };
-            let host_config = match config.hosts.get(host) {
+            let host_config = match server.hosts.get(host) {
                 Some(cfg) => cfg,
                 None => {
                     let req_opt = Some(&request);
@@ -154,7 +160,7 @@ async fn directive_process<S>(socket: &mut S, config: Arc<config::Config>)
             let mut root_path = None;
             let mut handled = false;
 
-            for directive in &host_config.directives {
+            for directive in host_config {
                 match directive {
                     Directive::Root { pattern, path } => {
                         #[cfg(debug_assertions)]
