@@ -14,15 +14,52 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - Serve files from a directory
 - TLS support
 
-## Docker
+## Quick Start
+You can run Cblt with Cargo or Docker.
+### Cargo
+```bash
+cargo run
+```
+
+### Docker
 ```bash
 docker build -t cblt:0.0.1 .
 docker run -d -p 80:80 --restart unless-stopped --name cblt cblt:0.0.1
 ```
-## Test
 
-curl -H "Host: example.com"  http://127.0.0.1/Cargo.toml
 
+### Test
+
+```
+curl -H "Host: example.com"  http://127.0.0.1/Cbltfile
+curl --insecure https:/127.0.0.1:1212/Cbltfile
+```
+
+## Configuration examples
+**Cbltfile** examples:
+### File server
+```kdl
+"example.com" {
+    root "*" "/path/to/folder"
+    file_server
+}
+```
+### File server & Proxy
+```kdl
+"127.0.0.1:8080" {
+    reverse_proxy "/test-api/*" "http://10.8.0.3:80"
+    root "*" "/path/to/folder"
+    file_server
+}
+```
+### TLS support ([docs]())
+```kdl
+"example.com" {
+    root "*" "/path/to/folder"
+    file_server
+    tls "/path/to/your/domain.crt" "/path/to/your/domain.key"
+}
+```
 
 ## Benchmark
 Do test with Apache Benchmark (ab) for 300 requests with 100 concurrent connections. Download 5mb image from example.com/logo_huge.png

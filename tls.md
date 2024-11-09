@@ -1,9 +1,4 @@
-# For windows users
-
-```bash
-scoop install cmake
-```
-# Self-signed certificate
+## Self-signed certificate
 ```bash
 rm -f domain.key domain.crt
 openssl req -x509 -nodes -newkey rsa:4096 \
@@ -20,9 +15,9 @@ openssl req -x509 -nodes -newkey rsa:4096 \
 "127.0.0.1" {
     root "*" "/path/to/folder"
     file_server
-    tls "/path/to/your/certificate.crt" "/path/to/your/private.key"
+    tls "/path/to/your/domain.crt" "/path/to/your/domain.key"
 }
 ```
 
-# Domain specific certificate
+## Domain specific certificate
 // TODO

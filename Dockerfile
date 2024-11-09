@@ -5,12 +5,9 @@ WORKDIR /usr/src/app
 COPY ./Cargo.toml .
 COPY ./Cbltfile .
 COPY ./src ./src
-COPY ./logo.png .
-COPY ./logo_huge.png .
+COPY ./assets ./assets
 
 RUN cargo build --release
-
-WORKDIR /usr/src/app
 
 RUN cp /usr/src/app/target/release/cblt /usr/src/app/cblt
 

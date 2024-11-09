@@ -1,6 +1,6 @@
 [package]
 name = "cblt"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 
 authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
@@ -11,7 +11,7 @@ description = "Safe and fast minimalistic web server, written in Rust, that serv
 keywords = ["web-server", "http", "proxy", "reverse-proxy", "file-server"]
 categories = ["web-programming", "network-programming", "development-tools"]
 
-exclude = ["benchmark", "image_huge.png"]
+exclude = ["benchmark", "assets"]
 
 
 [[bin]]
