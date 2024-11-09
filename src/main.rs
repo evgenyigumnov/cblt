@@ -222,6 +222,7 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
         }
     }
 }
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn reverse_proxy<S>(request: &Request<()>, handled: &mut bool, socket: &mut S, req_opt: Option<&Request<()>>, pattern: &String, destination: &String) where S: AsyncReadExt + AsyncWriteExt + Unpin {
 
     if matches_pattern(pattern, request.uri().path()) {
