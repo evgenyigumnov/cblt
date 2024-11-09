@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::config::{build_config, Directive};
 use crate::request::parse_request;
 use crate::response::{error_response, send_response, send_response_file};
@@ -20,7 +21,7 @@ use tracing_subscriber::FmtSubscriber;
 use tracing::instrument;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use tokio::io::{copy, sink, split, AsyncWriteExt};
+use tokio::io::{AsyncWriteExt};
 use tokio_rustls::{rustls, TlsAcceptor};
 
 mod config;
@@ -41,13 +42,61 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cbltfile_content = fs::read_to_string("Cbltfile").await?;
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = Arc::new(build_config(&doc)?);
+
+    #[derive(Debug)]
+    struct Server {
+        port: u16,
+        hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
+        cert: Option<String>,
+        key: Option<String>,
+    }
+
+    let mut servers: HashMap<u16, Server> = HashMap::new(); // Port -> Server
+
+    for (host, cfg) in &config.hosts {
+        let mut port = 80;
+        let mut cert_path = None;
+        let mut key_path = None;
+        cfg.directives.iter().for_each(|d| {
+            if let Directive::Tls { cert, key } = d {
+                port = 443;
+                cert_path = Some(cert.to_string());
+                key_path = Some(key.to_string());
+            }
+        });
+        if host.contains(":") {
+            let parts: Vec<&str> = host.split(":").collect();
+            port = parts[1].parse().unwrap();
+        }
+        println!("Host: {}, Port: {}", host, port);
+        servers.entry(port).and_modify(
+            |s| {
+                let hosts = &mut s.hosts;
+                hosts.insert(host.to_string(), cfg.directives.clone());
+                s.cert = cert_path.clone();
+                s.key = key_path.clone();
+            },
+        ).or_insert({
+            let mut hosts = HashMap::new();
+            hosts.insert(host.to_string(), cfg.directives.clone());
+            Server {
+                port,
+                hosts,
+                cert: cert_path,
+                key: key_path,
+            }
+        });
+    }
+
+    debug!("{:#?}", servers);
+
     let acceptor = if TLS {
         let certs = CertificateDer::pem_file_iter("domain.crt")?.collect::<Result<Vec<_>, _>>()?;
         let key = PrivateKeyDer::from_pem_file("domain.key")?;
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)?;
-         Some(TlsAcceptor::from(Arc::new(server_config)))
+        Some(TlsAcceptor::from(Arc::new(server_config)))
     } else {
         None
     };
@@ -74,16 +123,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     directive_process(&mut stream, config).await;
                 });
             }
-
         }
-
-
     }
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn directive_process<S>(socket: &mut S, config: Arc<config::Config>)
-where S: AsyncReadExt + AsyncWriteExt + Unpin
+    where S: AsyncReadExt + AsyncWriteExt + Unpin
 {
     match read_from_socket(socket).await {
         None => {
@@ -192,7 +238,7 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn read_from_socket<S>(socket: &mut S) -> Option<Request<()>>
-where S: AsyncReadExt + AsyncWriteExt + Unpin
+    where S: AsyncReadExt + AsyncWriteExt + Unpin
 {
     let mut buf = Vec::with_capacity(4096);
     let mut reader = BufReader::new(&mut *socket);
@@ -237,7 +283,7 @@ async fn file_server<S>(
     socket: &mut S,
     req_opt: Option<&Request<()>>,
 )
-where S: AsyncWriteExt + Unpin
+    where S: AsyncWriteExt + Unpin
 {
     if let Some(root) = root_path {
         let mut file_path = PathBuf::from(root);
@@ -269,6 +315,7 @@ where S: AsyncWriteExt + Unpin
         return;
     }
 }
+
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 async fn file_size(file: &File) -> u64 {
     let metadata = file.metadata().await.unwrap();

@@ -13,7 +13,7 @@ pub struct HostConfig {
     pub directives: Vec<Directive>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Directive {
     Root {
         pattern: String,

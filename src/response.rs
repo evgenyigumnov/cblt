@@ -3,7 +3,6 @@ use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
