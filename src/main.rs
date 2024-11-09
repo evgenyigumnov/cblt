@@ -178,6 +178,7 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin
                         handled = true;
                         break;
                     }
+                    Directive::Tls { .. } => {}
                 }
             }
 

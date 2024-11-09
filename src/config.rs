@@ -27,6 +27,10 @@ pub enum Directive {
     Redir {
         destination: String,
     },
+    Tls {
+        cert: String,
+        key: String,
+    },
 }
 
 pub fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
@@ -81,6 +85,18 @@ pub fn build_config(doc: &KdlDocument) -> Result<Config, Box<dyn Error>> {
                         } else {
                             return Err(
                                 format!("Invalid 'redir' directive for host {}", hostname).into()
+                            );
+                        }
+                    }
+                    "tls" => {
+                        let args = get_string_args(child_node);
+                        if args.len() >= 2 {
+                            let cert_path = args.get(0).unwrap().to_string();
+                            let key_path = args.get(1).unwrap().to_string();
+                            directives.push(Directive::Tls { cert: cert_path, key: key_path });
+                        } else {
+                            return Err(
+                                format!("Invalid 'tls' directive for host {}", hostname).into()
                             );
                         }
                     }
@@ -153,6 +169,26 @@ example1.com {
         let config = build_config(&doc)?;
         println!("{:#?}", config);
 
+
+
         Ok(())
     }
+
+
+    #[test]
+    fn test_tls() -> Result<(), Box<dyn Error>> {
+        let cblt_file = r#"
+example.com {
+    root "*" "/path/to/folder"
+    file_server
+    tls "/path/to/your/certificate.crt" "/path/to/your/private.key"
+}
+            "#;
+        let doc: KdlDocument = cblt_file.parse()?;
+        let config = build_config(&doc)?;
+        println!("{:#?}", config);
+
+        Ok(())
+    }
+
 }
