@@ -18,7 +18,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 You can run Cblt with Cargo or Docker.
 ### Cargo
 ```bash
-cargo run
+cargo run --release
 ```
 
 ### Docker
