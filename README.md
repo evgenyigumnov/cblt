@@ -35,8 +35,7 @@ curl -H "Host: example.com"  http://127.0.0.1/
 curl --insecure https:/127.0.0.1:1212/
 ```
 
-## Configuration examples
-**Cbltfile** examples:
+## "Cbltfile" configuration examples
 ### File server
 ```kdl
 "*:80" {
