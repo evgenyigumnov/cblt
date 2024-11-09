@@ -1,29 +1,30 @@
-CBLT — безопасный, быстрый и минималистичный веб-сервер на языке программирования Rust
+# CBLT — A Safe, Fast, and Minimalistic Web Server in Rust Programming Language
 
-Для изучения нового языка программирования я использую следующий подход. Сначала я читаю учебник по этому языку программирования, в котором объясняются синтаксис, идиомы, философия и принципы работы языка. После этого я пишу небольшой пет-проект на этом языке программирования. На пет-проекте я немного практикуюсь с новым языком, с его стандартными библиотеками и популярными фреймворками.
+To learn a new programming language, I use the following approach. First, I read a tutorial for that programming language, which explains the syntax, idioms, philosophy, and principles of how the language works. After that, I write a small pet project in that programming language. In the pet project, I practice a bit with the new language, its standard libraries, and popular frameworks.
 
-Чтобы погрузиться сильнее в язык, вместо пет-проекта я начинаю писать свои библиотеки для работы с базами данных (ORM), JSON, акторами, MVC веб-фреймворком, логированием и т.д. Библиотеки, которые вряд ли будут кому-то нужны, но они помогут мне лучше понять язык программирования. На удивление, с языком Rust я добрался до написания своего веб-сервера. Раньше такого не было. Думаю, это из-за того, что Rust — это язык системного программирования и грех на нём не попробовать заняться оптимизацией перформанса.
+To immerse myself deeper into the language, instead of a pet project, I start writing my own libraries for working with databases (ORM), JSON, actors, MVC web frameworks, logging, etc. These libraries are unlikely to be needed by anyone, but they help me better understand the programming language. Surprisingly, with Rust, I managed to write my own web server. I hadn't done this before. I think it's because Rust is a systems programming language, and it's not a sin to try optimizing performance with it.
 
-В итоге я столкнулся с тем, что Rust не имеет аналогов Nginx, Lighttpd, Caddy, HAProxy, Apache, Tomcat, Jetty и т.д. Все эти веб-сервера написаны на C, Go, Java и т.д. Имеются только веб-фреймворки: Actix, Axum, Rocket, Hyper и т.д.
+In the end, I encountered that Rust does not have equivalents to Nginx, Lighttpd, Caddy, HAProxy, Apache, Tomcat, Jetty, etc. All these web servers are written in C, Go, Java, etc. There are only web frameworks: Actix, Axum, Rocket, Hyper, etc.
 
-В целом я прикинул, что обычно я использую Nginx для следующих целей:
+Overall, I figured out that I usually use Nginx for the following purposes:
 
-1. TLS для доменов
-2. Проксирование запросов на бэкэнд
-3. Раздача статических файлов
+1. TLS for domains
+2. Proxying requests to the backend
+3. Serving static files
 
-В итоге решил написать свою реализацию веб-сервера на Rust.
+As a result, I decided to write my own implementation of a web server in Rust.
 
-Сервер поддерживает конфигурационный файл в формате KDL Document Language. Вот примеры "Cbltfile" конфигурационного файла для веб-сервера Cblt:
+The server supports a configuration file in the KDL (KDL Document Language) format. Here are examples of the "Cbltfile" configuration file for the Cblt web server:
 
-**Файл сервер**
+**Server File**
 ```kdl
 "*:80" {
     root "*" "/path/to/folder"
     file_server
 }
 ```
-**Файл сервер & Проксирование**
+
+**File Server & Proxying**
 ```kdl
 "127.0.0.1:8080" {
     reverse_proxy "/test-api/*" "http://10.8.0.3:80"
@@ -31,7 +32,8 @@ CBLT — безопасный, быстрый и минималистичный 
     file_server
 }
 ```
-**TLS поддержка**
+
+**TLS Support**
 ```kdl
 "example.com" {
     root "*" "/path/to/folder"
@@ -40,7 +42,7 @@ CBLT — безопасный, быстрый и минималистичный 
 }
 ```
 
-Сейчас Cblt веб-сервер можно запустить двумя способами: через Cargo или Docker.
+Currently, the Cblt web server can be launched in two ways: via Cargo or Docker.
 
 ***Cargo***
 ```bash
@@ -53,13 +55,12 @@ docker build -t cblt:0.0.3 .
 docker run -d -p 80:80 --restart unless-stopped --name cblt cblt:0.0.3
 ```
 
+At the moment, I have achieved an acceptable speed for proxying static files.
 
-На текущий момент я добился приемлемой скорости работы для проксирования статических файлов.
-
-Провёл тест с Apache Benchmark (ab) для 300 запросов с 100 одновременными соединениями. Загрузка изображения размером 5 МБ с example.com/logo_huge.png.
+I conducted a test with Apache Benchmark (ab) for 300 requests with 100 concurrent connections. Loading an image sized 5 MB from example.com/logo_huge.png.
 ```bash
 ab -c 100 -n 300 http://example.com/logo_huge.png
-``` 
+```
 
 | Percent | Cblt | Nginx | Caddy |
 |---------|------|-------|-------|
@@ -238,8 +239,8 @@ Percentage of the requests served within a certain time (ms)
 
 
 
-В планах также провести тесты для проксирования бэкенда, в общем reverse_proxy на производительность не тестировал еще.
+I also plan to conduct tests for backend proxying; in general, I haven't yet tested the reverse proxy for performance.
 
-Может в этот раз мой мини-проект кого-то заинтересует? И это увлечение вырастет в что-то большее?
+Maybe this time my mini-project will interest someone? And this hobby will grow into something bigger?
 
-Если интересно глянуть код или поконтрибутить, вот ссылка на репозиторий: [https://github.com/evgenyigumnov/cblt](https://github.com/evgenyigumnov/cblt)
+If you're interested in looking at the code or contributing, here's the link to the repository: [https://github.com/evgenyigumnov/cblt](https://github.com/evgenyigumnov/cblt)
