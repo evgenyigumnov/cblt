@@ -12,5 +12,6 @@ RUN cargo build --release
 RUN cp /usr/src/app/target/release/cblt /usr/src/app/cblt
 
 EXPOSE 80
+EXPOSE 443
 
 CMD ["./cblt"]
