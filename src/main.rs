@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use crate::config::{build_config, Directive};
-use crate::request::parse_request;
+use crate::request::{socket_to_request};
 use crate::response::{error_response, send_response};
-use http::{Request, Response, StatusCode};
+use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
 use std::error::Error;
 use std::str;
 use std::sync::Arc;
 use tokio::fs;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{ AsyncReadExt};
 use tokio::net::TcpListener;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -143,7 +143,7 @@ async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
 async fn directive_process<S>(socket: &mut S, server: &Server)
     where S: AsyncReadExt + AsyncWriteExt + Unpin
 {
-    match read_from_socket(socket).await {
+    match socket_to_request(socket).await {
         None => {
             return;
         }
@@ -220,45 +220,6 @@ async fn directive_process<S>(socket: &mut S, server: &Server)
             }
         }
     }
-}
-
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn read_from_socket<S>(socket: &mut S) -> Option<Request<()>>
-    where S: AsyncReadExt + AsyncWriteExt + Unpin
-{
-    let mut buf = Vec::with_capacity(4096);
-    let mut reader = BufReader::new(&mut *socket);
-    let mut n = 0;
-    loop {
-        let bytes_read = reader.read_until(b'\n', &mut buf).await.unwrap();
-        n += bytes_read;
-        if bytes_read == 0 {
-            break; // Connection closed
-        }
-        if buf.ends_with(b"\r\n\r\n") {
-            break; // End of headers
-        }
-    }
-
-    let req_str = match str::from_utf8(&buf[..n]) {
-        Ok(v) => v,
-        Err(_) => {
-            let response = error_response(StatusCode::BAD_REQUEST);
-            let _ = send_response(socket, response, None).await;
-            return None;
-        }
-    };
-
-    let request = match parse_request(req_str) {
-        Some(req) => req,
-        None => {
-            let response = error_response(StatusCode::BAD_REQUEST);
-            let _ = send_response(socket, response, None).await;
-            return None;
-        }
-    };
-
-    Some(request)
 }
 
 
