@@ -15,6 +15,8 @@ use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tokio::runtime::Builder;
+use tokio::sync::Semaphore;
 use tokio_rustls::{rustls, TlsAcceptor};
 use tracing::instrument;
 use tracing::Level;
@@ -34,9 +36,13 @@ struct Args {
     /// Configuration file path
     #[arg(long, default_value = "./Cbltfile")]
     cfg: String,
+
+    /// Maximum number of connections
+    #[arg(long, default_value_t = 1000)]
+    max_connections: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Server {
     pub port: u16,
     pub hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
@@ -44,14 +50,30 @@ pub struct Server {
     pub key: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse();
 
+
+fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]
     only_in_production();
+    let num_cpus = num_cpus::get() ;
+    info!("Workers amount: {}", num_cpus);
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(num_cpus)
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(async {
+        server().await?;
+        Ok(())
+    })
+}
+async fn server() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+    let max_connections: usize = args.max_connections;
+    info!("Max connections: {}", max_connections);
+
     let cbltfile_content = match fs::read_to_string(&args.cfg).await {
         Ok(file) => file,
         Err(_) => {
@@ -104,7 +126,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for (_, server) in servers {
         tokio::spawn(async move {
-            match server_task(&server).await {
+            match server_task(&server, max_connections).await {
                 Ok(_) => {}
                 Err(err) => {
                     error!("Error: {}", err);
@@ -119,7 +141,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
+async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<dyn Error>> {
     let acceptor = if server.cert.is_some() {
         let certs = CertificateDer::pem_file_iter(server.cert.clone().unwrap())?
             .collect::<Result<Vec<_>, _>>()?;
@@ -132,24 +154,33 @@ async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
         None
     };
 
+    let semaphore = Arc::new(Semaphore::new(max_connections));
     let addr = format!("0.0.0.0:{}", server.port);
     let listener = TcpListener::bind(addr).await?;
     info!("Listen port: {}", server.port);
     loop {
+        let acceptor_clone = acceptor.clone();
+        let server_clone = server.clone();
         let (mut stream, _) = listener.accept().await?;
-        match acceptor {
-            None => {
-                directive_process(&mut stream, &server).await;
+        let permit = semaphore.clone().acquire_owned().await?;
+
+        tokio::spawn(async move {
+            let _permit = permit;
+            match acceptor_clone {
+                None => {
+                    directive_process(&mut stream, &server_clone).await;
+                }
+                Some(ref acceptor) => match acceptor.accept(stream).await {
+                    Ok(mut stream) => {
+                        directive_process(&mut stream, &server_clone).await;
+                    }
+                    Err(err) => {
+                        error!("Error: {}", err);
+                    }
+                },
             }
-            Some(ref acceptor) => match acceptor.accept(stream).await {
-                Ok(mut stream) => {
-                    directive_process(&mut stream, &server).await;
-                }
-                Err(err) => {
-                    error!("Error: {}", err);
-                }
-            },
-        }
+
+        });
     }
 }
 

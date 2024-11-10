@@ -1,6 +1,6 @@
 [package]
 name = "cblt"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 
 authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
@@ -37,3 +37,4 @@ clap = { version = "4.5.20", features = ["derive"] }
 futures-core = "0.3.31"
 futures-util = "0.3.31"
 async-compression = { version = "0.4.17", features = ["tokio", "gzip"] }
+num_cpus = "1.16.0"
