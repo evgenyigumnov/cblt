@@ -1,6 +1,6 @@
 [package]
 name = "cblt"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2021"
 
 authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
@@ -25,7 +25,7 @@ http = "1.1.0"
 env_logger = "0.11.5"
 log = "0.4.22"
 kdl = "4.6.0"
-reqwest = "0.12.9"
+reqwest = { version = "0.12.9", features = ["stream"] }
 bytes = "1.8.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
@@ -34,3 +34,5 @@ itoa = "1.0.11"
 rustls = { version = "0.23.16"}
 tokio-rustls = "0.26.0"
 clap = { version = "4.5.20", features = ["derive"] }
+futures-core = "0.3.31"
+futures-util = "0.3.31"

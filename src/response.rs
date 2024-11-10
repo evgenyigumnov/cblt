@@ -52,6 +52,56 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+pub async fn send_response_stream<S, T>(
+    socket: &mut S,
+    response: Response<&str>,
+    req_opt: Option<&Request<Vec<u8>>>,
+    stream: &mut T,
+) -> Result<(), Box<dyn Error>>
+    where
+        S: AsyncWriteExt + Unpin,
+        T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
+{
+    log_request_response(req_opt, &response);
+    let (parts, _) = response.into_parts();
+
+    // Write status line without allocation
+    socket.write_all(b"HTTP/1.1 ").await?;
+    let mut itoa_buf = itoa::Buffer::new();
+    let status_str = itoa_buf.format(parts.status.as_u16());
+    socket.write_all(status_str.as_bytes()).await?;
+    socket.write_all(b" ").await?;
+    socket
+        .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
+        .await?;
+    socket.write_all(b"\r\n").await?;
+
+    // Write headers without allocation
+    for (key, value) in parts.headers.iter() {
+        socket.write_all(key.as_str().as_bytes()).await?;
+        socket.write_all(b": ").await?;
+        socket.write_all(value.as_bytes()).await?;
+        socket.write_all(b"\r\n").await?;
+    }
+
+    // End headers
+    socket.write_all(b"\r\n").await?;
+
+    // Ensure all headers are flushed
+    socket.flush().await?;
+    use futures_util::stream::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        socket.write_all(&chunk).await?;
+    }
+    socket.flush().await?;
+
+    Ok(())
+}
+
+
+
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub fn log_request_response<T>(req_opt: Option<&Request<Vec<u8>>>, response: &Response<T>) {
     if let Some(req) = req_opt {
         #[cfg(debug_assertions)]

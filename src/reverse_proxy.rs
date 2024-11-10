@@ -1,6 +1,5 @@
 use crate::matches_pattern;
-use crate::response::{error_response, log_request_response, send_response};
-use bytes::Bytes;
+use crate::response::{error_response, log_request_response, send_response, send_response_stream};
 use http::{Request, Response, StatusCode};
 use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -36,7 +35,8 @@ pub async fn directive<S>(
             Ok(resp) => {
                 let status = resp.status();
                 let headers = resp.headers().clone();
-                let body = resp.bytes().await.unwrap_or_else(|_| Bytes::new());
+
+                let mut stream = resp.bytes_stream();
 
                 let mut response_builder = Response::builder().status(status);
 
@@ -44,9 +44,9 @@ pub async fn directive<S>(
                     response_builder = response_builder.header(key, value);
                 }
 
-                let response = response_builder.body(body.to_vec()).unwrap();
+                let response = response_builder.body("").unwrap();
                 log_request_response(req_opt, &response);
-                let _ = send_response(socket, response, req_opt).await;
+                let _ = send_response_stream(socket, response, req_opt, &mut stream).await;
                 *handled = true;
 
                 return;
