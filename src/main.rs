@@ -37,7 +37,6 @@ pub struct Server {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    info!("Cblt started");
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]
@@ -90,15 +89,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for (_, server) in servers {
         tokio::spawn(async move {
             match server_task(&server).await {
-                Ok(_) => {}
+                Ok(_) => {
+                }
                 Err(err) => {
                     error!("Error: {}", err);
                 }
             }
         });
     }
-
+    info!("Cblt started");
     tokio::signal::ctrl_c().await?;
+    info!("Cblt stopped");
 
     Ok(())
 }
@@ -118,7 +119,7 @@ async fn server_task(server: &Server) -> Result<(), Box<dyn Error>> {
 
     let addr = format!("0.0.0.0:{}", server.port);
     let listener = TcpListener::bind(addr).await?;
-
+    info!("Listen port: {}", server.port);
     loop {
         let (mut stream, _) = listener.accept().await?;
         match acceptor {
