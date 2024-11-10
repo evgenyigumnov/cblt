@@ -42,7 +42,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(not(debug_assertions))]
     only_in_production();
     // Read configuration from Cbltfile
-    let cbltfile_content = fs::read_to_string("Cbltfile").await?;
+    let cbltfile_content = match fs::read_to_string("Cbltfile").await {
+        Ok(file) => file,
+        Err(e) => {
+            error!("Error: {}", e);
+            panic!("Cbltfile not found");
+        }
+    };
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = build_config(&doc)?;
 
