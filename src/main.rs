@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cbltfile_content = match fs::read_to_string("Cbltfile").await {
         Ok(file) => file,
         Err(e) => {
-            error!("Error: {}", e);
+            error!("Cbltfile not found");
             panic!("Cbltfile not found");
         }
     };
