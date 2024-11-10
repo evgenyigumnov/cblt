@@ -28,6 +28,11 @@ where
         .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
         .await?;
     socket.write_all(b"\r\n").await?;
+    let gzip_supported = gzip_support_detect(req_opt);
+    if gzip_supported {
+        // socket.write_all(b"Content-Encoding: gzip").await?;
+        // socket.write_all(b"\r\n").await?;
+    }
 
     // Write headers without allocation
     for (key, value) in parts.headers.iter() {
@@ -42,7 +47,6 @@ where
 
     // Ensure all headers are flushed
     socket.flush().await?;
-    let gzip_supported = gzip_support_detect(req_opt);
 
     if gzip_supported {
         debug!("Gzip supported");
@@ -94,10 +98,16 @@ pub async fn send_response_stream<S, T>(
     socket
         .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
         .await?;
-    socket.write_all(b"\r\n").await?;
 
+    socket.write_all(b"\r\n").await?;
+    let gzip_supported = gzip_support_detect(req_opt);
+    if gzip_supported {
+        socket.write_all(b"Content-Encoding: gzip").await?;
+        socket.write_all(b"\r\n").await?;
+    }
     // Write headers without allocation
     for (key, value) in parts.headers.iter() {
+        debug!("{}: {}", key.as_str(), value.to_str().unwrap());
         socket.write_all(key.as_str().as_bytes()).await?;
         socket.write_all(b": ").await?;
         socket.write_all(value.as_bytes()).await?;
@@ -110,7 +120,6 @@ pub async fn send_response_stream<S, T>(
     // Ensure all headers are flushed
     socket.flush().await?;
 
-    let gzip_supported = gzip_support_detect(req_opt);
 
     use futures_util::stream::StreamExt;
     if gzip_supported {
