@@ -9,13 +9,13 @@ Safe and fast minimalistic web server, written in Rust, that serves files from a
 The name **Cblt** appears to be a good shortened version of **Cobalt**. It retains the association with the element and strength, while also looking modern and minimalist. 
 
 ## Features
+- **10 times faster than Nginx for small content under 100KB**
 - KDL Document Language configuration (**Cbltfile**)
 - Proxy requests to another server
 - Serve files from a directory
 - TLS support
 - Gzip compression
 - Redirects
-- 10 times faster than Nginx for small content under 100KB
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
