@@ -1,4 +1,4 @@
-use crate::buffer_pool::{SmartVec, SmartVector};
+use crate::buffer_pool::SmartVector;
 use crate::response::{error_response, send_response};
 use http::Version;
 use http::{Request, StatusCode};
@@ -21,7 +21,7 @@ where
 
     // Read data from the socket until we can parse the headers
     loop {
-        let mut temp_buf = [0; 1024];
+        let mut temp_buf = [0; STATIC_BUF_SIZE];
         let bytes_read = reader.read(&mut temp_buf).await.unwrap_or(0);
         if bytes_read == 0 {
             break; // Connection closed

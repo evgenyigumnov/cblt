@@ -3,7 +3,7 @@ use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]

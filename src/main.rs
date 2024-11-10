@@ -1,4 +1,4 @@
-use crate::buffer_pool::{BufferPool, SmartVec, SmartVector, StaticBufPool};
+use crate::buffer_pool::{BufferPool, SmartVector};
 use crate::config::{build_config, Directive};
 use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, send_response};
