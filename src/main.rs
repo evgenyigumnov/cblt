@@ -41,7 +41,7 @@ struct Args {
     cfg: String,
 
     /// Maximum number of connections
-    #[arg(long, default_value_t = 1000)]
+    #[arg(long, default_value_t = 10000)]
     max_connections: usize,
 }
 
