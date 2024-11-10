@@ -14,28 +14,7 @@ pub async fn send_response_file<S>(
 where
     S: AsyncWriteExt + Unpin,
 {
-    if let Some(req) = req_opt {
-        #[cfg(debug_assertions)]
-        debug!("{:?}", req);
-        if let Some(host_header) = req.headers().get("Host") {
-            info!(
-                "Request: {} {} {} {}",
-                req.method(),
-                req.uri(),
-                host_header.to_str().unwrap_or(""),
-                response.status().as_u16()
-            );
-        } else {
-            info!(
-                "Request: {} {} {}",
-                req.method(),
-                req.uri(),
-                response.status().as_u16()
-            );
-        }
-    } else {
-        info!("Response: {}", response.status().as_u16());
-    }
+    log_request_response(req_opt, &response);
     let (parts, mut body) = response.into_parts();
 
     // Write status line without allocation
@@ -71,6 +50,31 @@ where
 
     Ok(())
 }
+
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+pub fn log_request_response<T>(req_opt: Option<&Request<Vec<u8>>>, response: &Response<T>) {
+    if let Some(req) = req_opt {
+        #[cfg(debug_assertions)]
+        debug!("{:?}", req);
+        if let Some(host_header) = req.headers().get("Host") {
+            info!(
+                "Request: {} {} {} {}",
+                req.method(),
+                req.uri(),
+                host_header.to_str().unwrap_or(""),
+                response.status().as_u16()
+            );
+        } else {
+            info!(
+                "Request: {} {} {}",
+                req.method(),
+                req.uri(),
+                response.status().as_u16()
+            );
+        }
+    } else {
+        info!("Response: {}", response.status().as_u16());
+    }}
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response<S>(

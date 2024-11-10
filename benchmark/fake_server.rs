@@ -1,4 +1,4 @@
-#!/usr/bin/env run-cargo-script
+#!/usr/bin/env rust-script
 //! Install `rust-script` with `cargo install rust-script` and run with:
 //!
 //! rust-script ./fake_server.rs

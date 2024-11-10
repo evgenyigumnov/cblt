@@ -1,5 +1,5 @@
 use crate::matches_pattern;
-use crate::response::{error_response, send_response};
+use crate::response::{error_response, log_request_response, send_response};
 use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use log::debug;
@@ -45,12 +45,15 @@ pub async fn directive<S>(
                 }
 
                 let response = response_builder.body(body.to_vec()).unwrap();
+                log_request_response(req_opt, &response);
                 let _ = send_response(socket, response, req_opt).await;
                 *handled = true;
+
                 return;
             }
             Err(_) => {
                 let response = error_response(StatusCode::BAD_GATEWAY);
+                log_request_response(req_opt, &response);
                 let _ = send_response(socket, response, req_opt).await;
                 *handled = true;
                 return;
