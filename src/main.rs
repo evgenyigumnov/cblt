@@ -89,8 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for (_, server) in servers {
         tokio::spawn(async move {
             match server_task(&server).await {
-                Ok(_) => {
-                }
+                Ok(_) => {}
                 Err(err) => {
                     error!("Error: {}", err);
                 }

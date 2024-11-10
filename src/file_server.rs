@@ -15,7 +15,6 @@ pub async fn directive<S>(
 ) where
     S: AsyncWriteExt + Unpin,
 {
-
     match root_path {
         None => {
             let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
@@ -24,7 +23,10 @@ pub async fn directive<S>(
             return;
         }
         Some(root) => {
-            if let Some(mut file_path) = sanitize_path(&Path::new(root), request.uri().path().trim_start_matches('/')) {
+            if let Some(mut file_path) = sanitize_path(
+                &Path::new(root),
+                request.uri().path().trim_start_matches('/'),
+            ) {
                 if file_path.is_dir() {
                     file_path.push("index.html");
                 }
@@ -50,10 +52,8 @@ pub async fn directive<S>(
                 *handled = true;
                 return;
             }
-
         }
     }
-
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
@@ -71,8 +71,7 @@ fn file_response(file: File, content_length: u64) -> Response<File> {
         .unwrap()
 }
 
-
-
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 fn sanitize_path(base_path: &Path, requested_path: &str) -> Option<PathBuf> {
     let mut full_path = base_path.to_path_buf();
     let requested_path = Path::new(requested_path);
