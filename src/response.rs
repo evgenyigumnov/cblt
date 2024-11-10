@@ -1,15 +1,15 @@
+use async_compression::tokio::write::GzipEncoder;
 use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
-use async_compression::tokio::write::GzipEncoder;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_file<S>(
     socket: &mut S,
-    response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite >,
+    response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite>,
     req_opt: Option<&Request<Vec<u8>>>,
 ) -> Result<(), Box<dyn Error>>
 where
@@ -57,7 +57,6 @@ where
         tokio::io::copy(&mut body, socket).await?;
     }
 
-
     // Ensure all data is flushed
     socket.flush().await?;
 
@@ -82,9 +81,9 @@ pub async fn send_response_stream<S, T>(
     req_opt: Option<&Request<Vec<u8>>>,
     stream: &mut T,
 ) -> Result<(), Box<dyn Error>>
-    where
-        S: AsyncWriteExt + Unpin,
-        T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin ,
+where
+    S: AsyncWriteExt + Unpin,
+    T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
 {
     log_request_response(req_opt, &response);
     let (parts, _) = response.into_parts();
@@ -120,7 +119,6 @@ pub async fn send_response_stream<S, T>(
     // Ensure all headers are flushed
     socket.flush().await?;
 
-
     use futures_util::stream::StreamExt;
     if gzip_supported {
         debug!("Gzip supported");
@@ -143,8 +141,6 @@ pub async fn send_response_stream<S, T>(
 
     Ok(())
 }
-
-
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub fn log_request_response<T>(req_opt: Option<&Request<Vec<u8>>>, response: &Response<T>) {
@@ -169,7 +165,8 @@ pub fn log_request_response<T>(req_opt: Option<&Request<Vec<u8>>>, response: &Re
         }
     } else {
         info!("Response: {}", response.status().as_u16());
-    }}
+    }
+}
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response<S>(

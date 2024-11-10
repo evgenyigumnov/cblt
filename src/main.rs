@@ -1,6 +1,7 @@
 use crate::config::{build_config, Directive};
 use crate::request::socket_to_request;
 use crate::response::{error_response, send_response};
+use clap::Parser;
 use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
@@ -19,7 +20,6 @@ use tracing::instrument;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
-use clap::Parser;
 
 mod config;
 mod request;
