@@ -1,20 +1,36 @@
-FROM rust:1.82.0
+FROM rust:alpine  as builder
+
+RUN apk update && \
+    apk add --no-cache \
+        curl \
+        build-base \
+        pkgconfig \
+        openssl-dev \
+        openssl-libs-static
 
 WORKDIR /usr/src/app
 
 COPY ./Cargo.toml .
-COPY ./Cbltfile .
 COPY ./src ./src
-COPY ./assets ./assets
 
 RUN cargo build --release
 
-RUN cp /usr/src/app/target/release/cblt /usr/src/app/cblt
-RUN rm -rf /usr/src/app/target
-RUN rm -rf /usr/src/app/src
-RUN rm -rf /usr/src/app/Cargo.toml
+CMD ["./cblt"]
+
+FROM alpine:latest
+
+RUN apk add --no-cache openssl
+
+RUN mkdir /cblt
+COPY --from=builder /usr/src/app/target/release/cblt /cblt/cblt
+
+WORKDIR /cblt
+
+COPY ./assets ./assets
+COPY ./Cbltfile ./Cbltfile
 
 EXPOSE 80
 EXPOSE 443
 
+# Команда для запуска приложения
 CMD ["./cblt"]
