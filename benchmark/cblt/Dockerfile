@@ -1,4 +1,4 @@
-FROM ievkz/cblt:0.1.1
+FROM ievkz/cblt:0.1.2
 
 WORKDIR /cblt
 
