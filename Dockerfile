@@ -23,6 +23,7 @@ RUN apk add --no-cache openssl
 
 RUN mkdir /cblt
 RUN mkdir /cblt/etc
+RUN mkdir /cblt/assets
 COPY --from=builder /usr/src/app/target/release/cblt /cblt/cblt
 
 WORKDIR /cblt
