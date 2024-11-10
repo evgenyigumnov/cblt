@@ -12,6 +12,6 @@ docker build -t ievkz/cblt:$VERSION . && \
 docker push ievkz/cblt:latest && \
 docker push ievkz/cblt:$VERSION
 
-#cargo publish -p cblt --allow-dirty
+cargo publish -p cblt --allow-dirty
 
 echo "Published: $VERSION"
