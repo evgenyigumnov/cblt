@@ -221,7 +221,9 @@ where
                             destination,
                         )
                         .await;
-                        break;
+                        if handled {
+                            break;
+                        }
                     }
                     Directive::Redir { destination } => {
                         let dest = destination.replace("{uri}", request.uri().path());
