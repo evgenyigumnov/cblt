@@ -2,13 +2,14 @@ use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::error::Error;
 use std::fmt::Debug;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use async_compression::tokio::write::GzipEncoder;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_file<S>(
     socket: &mut S,
-    response: Response<impl AsyncReadExt + Unpin + Debug>,
+    response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite >,
     req_opt: Option<&Request<Vec<u8>>>,
 ) -> Result<(), Box<dyn Error>>
 where
@@ -41,9 +42,17 @@ where
 
     // Ensure all headers are flushed
     socket.flush().await?;
+    let gzip_supported = gzip_support_detect(req_opt);
 
-    // Copy the body to the socket
-    tokio::io::copy(&mut body, socket).await?;
+    if gzip_supported {
+        debug!("Gzip supported");
+        let gzip_stream = GzipEncoder::new(body);
+        let mut gzip_reader = tokio::io::BufReader::new(gzip_stream);
+        tokio::io::copy(&mut gzip_reader, socket).await?;
+    } else {
+        tokio::io::copy(&mut body, socket).await?;
+    }
+
 
     // Ensure all data is flushed
     socket.flush().await?;
@@ -51,16 +60,27 @@ where
     Ok(())
 }
 
+fn gzip_support_detect(req_opt: Option<&Request<Vec<u8>>>) -> bool {
+    let accept_encoding = req_opt
+        .and_then(|req| req.headers().get(http::header::ACCEPT_ENCODING))
+        .and_then(|value| value.to_str().ok());
+
+    let gzip_supported = accept_encoding
+        .map(|encodings| encodings.contains("gzip"))
+        .unwrap_or(false);
+    gzip_supported
+}
+
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_stream<S, T>(
-    socket: &mut S,
+    mut socket: &mut S,
     response: Response<&str>,
     req_opt: Option<&Request<Vec<u8>>>,
     stream: &mut T,
 ) -> Result<(), Box<dyn Error>>
     where
         S: AsyncWriteExt + Unpin,
-        T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
+        T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin ,
 {
     log_request_response(req_opt, &response);
     let (parts, _) = response.into_parts();
@@ -89,10 +109,26 @@ pub async fn send_response_stream<S, T>(
 
     // Ensure all headers are flushed
     socket.flush().await?;
+
+    let gzip_supported = gzip_support_detect(req_opt);
+
     use futures_util::stream::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        socket.write_all(&chunk).await?;
+    if gzip_supported {
+        debug!("Gzip supported");
+
+        let mut gzip_stream = GzipEncoder::new(&mut socket);
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            gzip_stream.write_all(&chunk).await?;
+        }
+        gzip_stream.shutdown().await?;
+        gzip_stream.flush().await?;
+    } else {
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            socket.write_all(&chunk).await?;
+        }
     }
     socket.flush().await?;
 

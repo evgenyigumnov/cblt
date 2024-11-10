@@ -2,7 +2,7 @@ use crate::matches_pattern;
 use crate::response::{error_response, log_request_response, send_response, send_response_stream};
 use http::{Request, Response, StatusCode};
 use log::debug;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
