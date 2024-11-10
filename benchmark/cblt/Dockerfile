@@ -1,19 +1,10 @@
-FROM rust:1.82.0
+FROM ievkz/cblt:0.1.1
 
-WORKDIR /usr/src/app
+WORKDIR /cblt
 
-COPY ./Cargo.toml .
-COPY ./Cbltfile .
-COPY ./src ./src
-COPY ./logo.png .
-COPY ./logo_huge.png .
-
-RUN cargo build --release
-
-WORKDIR /usr/src/app
-
-RUN cp /usr/src/app/target/release/cblt /usr/src/app/cblt
+COPY ./assets ./assets
+COPY ./Cbltfile ./etc/Cbltfile
 
 EXPOSE 80
+EXPOSE 443
 
-CMD ["./cblt"]

@@ -57,10 +57,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     only_in_debug();
     #[cfg(not(debug_assertions))]
     only_in_production();
-    let num_cpus = num_cpus::get() * 4;
+    let num_cpus = num_cpus::get() ;
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
-        .worker_threads(16) // Устанавливаем максимальное число потоков, например, 4
+        .worker_threads(num_cpus)
         .enable_all()
         .build()?;
 

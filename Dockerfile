@@ -34,5 +34,4 @@ COPY ./Cbltfile ./etc/Cbltfile
 EXPOSE 80
 EXPOSE 443
 
-# Команда для запуска приложения
 CMD ["./cblt", "--cfg", "./etc/Cbltfile"]
