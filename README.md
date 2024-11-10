@@ -28,7 +28,7 @@ cblt
 
 ### Docker
 ```bash
-docker run -d -p 80:80 -p 443:443 --restart unless-stopped --name ievkz/cblt cblt
+docker run -d -p 80:80 -p 443:443 --restart unless-stopped --name cblt ievkz/cblt
 ```
 
 
