@@ -22,15 +22,16 @@ FROM alpine:latest
 RUN apk add --no-cache openssl
 
 RUN mkdir /cblt
+RUN mkdir /cblt/etc
 COPY --from=builder /usr/src/app/target/release/cblt /cblt/cblt
 
 WORKDIR /cblt
 
 COPY ./assets ./assets
-COPY ./Cbltfile ./Cbltfile
+COPY ./Cbltfile ./etc/Cbltfile
 
 EXPOSE 80
 EXPOSE 443
 
 # Команда для запуска приложения
-CMD ["./cblt"]
+CMD ["./cblt", "--cfg", "./etc/Cbltfile"]

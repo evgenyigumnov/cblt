@@ -19,6 +19,7 @@ use tracing::instrument;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
+use clap::Parser;
 
 mod config;
 mod request;
@@ -26,6 +27,14 @@ mod response;
 
 mod file_server;
 mod reverse_proxy;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Configuration file path
+    #[arg(long, default_value = "./Cbltfile")]
+    cfg: String,
+}
 
 #[derive(Debug)]
 pub struct Server {
@@ -37,14 +46,15 @@ pub struct Server {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]
     only_in_production();
-    // Read configuration from Cbltfile
-    let cbltfile_content = match fs::read_to_string("Cbltfile").await {
+    let cbltfile_content = match fs::read_to_string(&args.cfg).await {
         Ok(file) => file,
-        Err(e) => {
+        Err(_) => {
             error!("Cbltfile not found");
             panic!("Cbltfile not found");
         }
