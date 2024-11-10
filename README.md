@@ -15,6 +15,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - TLS support
 - Gzip compression
 - Redirects
+- 10 times faster than Nginx for small content under 100KB
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
@@ -78,17 +79,17 @@ curl -X POST http://127.0.0.1/api/entry \
 ```
 
 ## Benchmark
-Do test with Apache Benchmark (ab) for 300 requests with 100 concurrent connections. Download 5mb image from example.com/logo_huge.png
+Do test with Apache Benchmark (ab) for 3000 requests with 1000 concurrent connections. Download 23kb image from 127.0.0.1/logo.png
 
 ```bash
-ab -c 100 -n 300 http://example.com/logo_huge.png
+ ab -c 1000 -n 3000 http://127.0.0.1/logo.png
 ``` 
 
-| Percent | Cblt | Nginx | Caddy |
-|---------|------|-------|-------|
-| 50%     | 1956 | 1941  | 1768  |
-| 75%     | 2101 | 2065  | 1849  |
-| 100%    | 2711 | 2360  | 2270  |
+| Percent | Cblt | Nginx |
+|---------|------|-------|
+| 50%     | 179 | 1209  |
+| 75%     | 194 | 1655  |
+| 100%    | 200 | 2146  |
 
 ## Contributing
 I would love to see contributions from the community. If you experience bugs, feel free to open an issue. If you would like to implement a new feature or bug fix, please follow the steps:
