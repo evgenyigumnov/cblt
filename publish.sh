@@ -7,12 +7,11 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-echo $VERSION
-exit 1
-
 docker build -t ievkz/cblt:latest . && \
 docker build -t ievkz/cblt:$VERSION . && \
 docker push ievkz/cblt:latest && \
 docker push ievkz/cblt:$VERSION
 
 cargo publish -p cblt --allow-dirty
+
+echo "Published: $VERSION"
