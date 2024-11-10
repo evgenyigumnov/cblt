@@ -14,6 +14,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - Serve files from a directory
 - TLS support
 - Gzip compression
+- Redirects
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
@@ -67,6 +68,12 @@ curl -X POST http://127.0.0.1/api/entry \
     root "*" "/path/to/folder"
     file_server
     tls "/path/to/your/domain.crt" "/path/to/your/domain.key"
+}
+```
+### Redirect
+```kdl
+"*:80" {
+    redir "https://127.0.0.1{uri}"
 }
 ```
 
