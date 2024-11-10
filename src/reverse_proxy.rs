@@ -6,7 +6,7 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn directive<S>(
+pub async fn proxy_directive<S>(
     request: &Request<Vec<u8>>,
     handled: &mut bool,
     socket: &mut S,

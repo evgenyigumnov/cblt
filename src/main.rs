@@ -1,5 +1,6 @@
+use crate::buffer_pool::{BufferPool, SmartVec, SmartVector, StaticBufPool};
 use crate::config::{build_config, Directive};
-use crate::request::socket_to_request;
+use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, send_response};
 use clap::Parser;
 use http::{Response, StatusCode};
@@ -30,6 +31,8 @@ mod response;
 mod file_server;
 mod reverse_proxy;
 
+mod buffer_pool;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -50,14 +53,12 @@ pub struct Server {
     pub key: Option<String>,
 }
 
-
-
 fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]
     only_in_production();
-    let num_cpus = num_cpus::get() ;
+    let num_cpus = num_cpus::get();
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
         .worker_threads(num_cpus)
@@ -157,39 +158,42 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<
     let semaphore = Arc::new(Semaphore::new(max_connections));
     let addr = format!("0.0.0.0:{}", server.port);
     let listener = TcpListener::bind(addr).await?;
+    let buffer_pool = Arc::new(BufferPool::new(max_connections, BUF_SIZE));
     info!("Listen port: {}", server.port);
     loop {
+        let buffer_pool_arc = buffer_pool.clone();
         let acceptor_clone = acceptor.clone();
         let server_clone = server.clone();
         let (mut stream, _) = listener.accept().await?;
         let permit = semaphore.clone().acquire_owned().await?;
-
         tokio::spawn(async move {
             let _permit = permit;
+            let buffer = buffer_pool_arc.get_buffer().await.unwrap();
             match acceptor_clone {
                 None => {
-                    directive_process(&mut stream, &server_clone).await;
+                    directive_process(&mut stream, &server_clone, buffer.clone()).await;
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        directive_process(&mut stream, &server_clone).await;
+                        directive_process(&mut stream, &server_clone, buffer.clone()).await;
                     }
                     Err(err) => {
                         error!("Error: {}", err);
                     }
                 },
             }
-
+            buffer.lock().await.clear();
+            buffer_pool_arc.return_buffer(buffer).await;
         });
     }
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn directive_process<S>(socket: &mut S, server: &Server)
+async fn directive_process<S>(socket: &mut S, server: &Server, buffer: SmartVector)
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
-    match socket_to_request(socket).await {
+    match socket_to_request(socket, buffer).await {
         None => {
             return;
         }
@@ -233,8 +237,14 @@ where
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
-                        file_server::directive(&root_path, &request, &mut handled, socket, req_opt)
-                            .await;
+                        file_server::file_directive(
+                            &root_path,
+                            &request,
+                            &mut handled,
+                            socket,
+                            req_opt,
+                        )
+                        .await;
                         break;
                     }
                     Directive::ReverseProxy {
@@ -243,7 +253,7 @@ where
                     } => {
                         #[cfg(debug_assertions)]
                         debug!("Reverse proxy: {} -> {}", pattern, destination);
-                        reverse_proxy::directive(
+                        reverse_proxy::proxy_directive(
                             &request,
                             &mut handled,
                             socket,

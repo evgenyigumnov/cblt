@@ -6,7 +6,7 @@ use tokio::io::AsyncWriteExt;
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn directive<S>(
+pub async fn file_directive<S>(
     root_path: &Option<String>,
     request: &Request<Vec<u8>>,
     handled: &mut bool,

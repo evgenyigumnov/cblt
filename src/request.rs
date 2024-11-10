@@ -1,3 +1,4 @@
+use crate::buffer_pool::{SmartVec, SmartVector};
 use crate::response::{error_response, send_response};
 use http::Version;
 use http::{Request, StatusCode};
@@ -7,12 +8,15 @@ use std::str;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::instrument;
 
+pub const BUF_SIZE: usize = 8192;
+pub const STATIC_BUF_SIZE: usize = 1024;
+pub const HEADER_BUF_SIZE: usize = 32;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn socket_to_request<S>(socket: &mut S) -> Option<Request<Vec<u8>>>
+pub async fn socket_to_request<S>(socket: &mut S, buffer: SmartVector) -> Option<Request<Vec<u8>>>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
-    let mut buf = Vec::with_capacity(8192);
+    let mut buf = buffer.lock().await;
     let mut reader = BufReader::new(&mut *socket);
 
     // Read data from the socket until we can parse the headers
@@ -25,7 +29,7 @@ where
         buf.extend_from_slice(&temp_buf[..bytes_read]);
 
         // Try to parse the headers
-        let mut headers = [httparse::EMPTY_HEADER; 32];
+        let mut headers = [httparse::EMPTY_HEADER; HEADER_BUF_SIZE];
         let mut req = httparse::Request::new(&mut headers);
 
         match req.parse(&buf) {
