@@ -1,52 +1,54 @@
-# Используем минимальный образ Alpine
+# Use minimal Alpine image
 FROM alpine:latest
 
-# Устанавливаем необходимые пакеты, включая curl и зависимости для сборки Rust
+# Install necessary packages, including curl, build dependencies, and OpenSSL static libraries
 RUN apk update && \
     apk add --no-cache \
-    curl \
-    build-base \
-    pkgconfig \
-    openssl-dev && \
-    # Устанавливаем Rust
+        curl \
+        build-base \
+        pkgconfig \
+        openssl-dev \
+        openssl-libs-static && \
+    # Install Rust
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    # Добавляем Rust в PATH
+    # Add Rust to PATH
     source $HOME/.cargo/env && \
     export PATH="$HOME/.cargo/bin:$PATH" && \
-    # Создаем рабочую директорию
+    # Create working directory
     mkdir -p /usr/src/app
 
 WORKDIR /usr/src/app
 
-# Копируем файлы проекта
+# Copy project files
 COPY ./Cargo.toml .
 COPY ./Cbltfile .
 COPY ./src ./src
 COPY ./assets ./assets
 
-# Строим проект
+# Build the project
 RUN source $HOME/.cargo/env && \
     cargo build --release
 
-# Копируем исполняемый файл и удаляем ненужные файлы
+# Copy the executable and remove unnecessary files
 RUN cp /usr/src/app/target/release/cblt /usr/src/app/cblt && \
     rm -rf /usr/src/app/target && \
     rm -rf /usr/src/app/src && \
     rm -rf /usr/src/app/Cargo.toml && \
-    # Удаляем Rust и все зависимости для сборки
+    # Remove Rust and all build dependencies
     apk del \
-    curl \
-    build-base \
-    pkgconfig \
-    openssl-dev && \
+        curl \
+        build-base \
+        pkgconfig \
+        openssl-dev \
+        openssl-libs-static && \
     rm -rf $HOME/.cargo && \
     rm -rf /root/.rustup && \
     rm -rf /root/.cargo && \
     rm -rf /usr/local/cargo
 
-# Указываем открытые порты
+# Expose ports
 EXPOSE 80
 EXPOSE 443
 
-# Команда для запуска приложения
+# Command to run the application
 CMD ["./cblt"]
