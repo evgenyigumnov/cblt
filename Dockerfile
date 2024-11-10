@@ -11,6 +11,8 @@ RUN cargo build --release
 
 RUN cp /usr/src/app/target/release/cblt /usr/src/app/cblt
 RUN rm -rf /usr/src/app/target
+RUN rm -rf /usr/src/app/src
+RUN rm -rf /usr/src/app/Cargo.toml
 
 EXPOSE 80
 EXPOSE 443
