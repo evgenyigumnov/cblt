@@ -17,12 +17,9 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let mut buf = buffer.lock().await;
-    let mut reader = BufReader::new(&mut *socket);
-
-    // Read data from the socket until we can parse the headers
     loop {
         let mut temp_buf = [0; STATIC_BUF_SIZE];
-        let bytes_read = reader.read(&mut temp_buf).await.unwrap_or(0);
+        let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
         if bytes_read == 0 {
             break; // Connection closed
         }
@@ -59,7 +56,7 @@ where
                 if let Some(content_length) = content_length {
                     while body.len() < content_length {
                         let mut temp_buf = vec![0; content_length - body.len()];
-                        let bytes_read = reader.read(&mut temp_buf).await.unwrap_or(0);
+                        let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
                         if bytes_read == 0 {
                             break; // Connection closed
                         }
