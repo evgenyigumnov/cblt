@@ -7,7 +7,7 @@ use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn file_directive<S>(
-    root_path: &Option<String>,
+    root_path: Option<&str>,
     request: &Request<Vec<u8>>,
     handled: &mut bool,
     socket: &mut S,
@@ -24,7 +24,7 @@ pub async fn file_directive<S>(
         }
         Some(root) => {
             if let Some(mut file_path) = sanitize_path(
-                &Path::new(root),
+                Path::new(root),
                 request.uri().path().trim_start_matches('/'),
             ) {
                 if file_path.is_dir() {

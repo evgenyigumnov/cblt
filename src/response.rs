@@ -177,28 +177,7 @@ pub async fn send_response<S>(
 where
     S: AsyncWriteExt + Unpin,
 {
-    #[cfg(debug_assertions)]
-    if let Some(req) = req_opt {
-        debug!("{:?}", req);
-        if let Some(host_header) = req.headers().get("Host") {
-            info!(
-                "Request: {} {} {} {}",
-                req.method(),
-                req.uri(),
-                host_header.to_str().unwrap_or(""),
-                response.status().as_u16()
-            );
-        } else {
-            info!(
-                "Request: {} {} {}",
-                req.method(),
-                req.uri(),
-                response.status().as_u16()
-            );
-        }
-    } else {
-        info!("Response: {}", response.status().as_u16());
-    }
+    log_request_response(req_opt, &response);
     let (parts, body) = response.into_parts();
 
     // Estimate capacity to reduce reallocations

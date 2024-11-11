@@ -34,16 +34,12 @@ pub async fn proxy_directive<S>(
         match req_builder.send().await {
             Ok(resp) => {
                 let status = resp.status();
-                let headers = resp.headers().clone();
-
-                let mut stream = resp.bytes_stream();
-
+                let headers = resp.headers();
                 let mut response_builder = Response::builder().status(status);
-
                 for (key, value) in headers.iter() {
                     response_builder = response_builder.header(key, value);
                 }
-
+                let mut stream = resp.bytes_stream();
                 let response = response_builder.body("").unwrap();
                 log_request_response(req_opt, &response);
                 let _ = send_response_stream(socket, response, req_opt, &mut stream).await;

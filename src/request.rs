@@ -5,7 +5,7 @@ use http::{Request, StatusCode};
 use httparse::Status;
 use log::debug;
 use std::str;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;
@@ -17,12 +17,9 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let mut buf = buffer.lock().await;
-    let mut reader = BufReader::new(&mut *socket);
-
-    // Read data from the socket until we can parse the headers
     loop {
         let mut temp_buf = [0; STATIC_BUF_SIZE];
-        let bytes_read = reader.read(&mut temp_buf).await.unwrap_or(0);
+        let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
         if bytes_read == 0 {
             break; // Connection closed
         }
@@ -54,20 +51,19 @@ where
                     }
                 };
 
-                let mut body = buf[header_len..].to_vec(); // Any remaining data is part of body
-
                 if let Some(content_length) = content_length {
+                    let mut body = buf[header_len..].to_vec(); // Any remaining data is part of body
                     while body.len() < content_length {
                         let mut temp_buf = vec![0; content_length - body.len()];
-                        let bytes_read = reader.read(&mut temp_buf).await.unwrap_or(0);
+                        let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
                         if bytes_read == 0 {
                             break; // Connection closed
                         }
                         body.extend_from_slice(&temp_buf[..bytes_read]);
                     }
+                    *request.body_mut() = body;
                 }
 
-                *request.body_mut() = body;
                 #[cfg(debug_assertions)]
                 debug!("{:?}", request);
                 return Some(request);
