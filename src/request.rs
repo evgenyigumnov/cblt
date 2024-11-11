@@ -51,9 +51,8 @@ where
                     }
                 };
 
-                let mut body = buf[header_len..].to_vec(); // Any remaining data is part of body
-
                 if let Some(content_length) = content_length {
+                    let mut body = buf[header_len..].to_vec(); // Any remaining data is part of body
                     while body.len() < content_length {
                         let mut temp_buf = vec![0; content_length - body.len()];
                         let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
@@ -62,9 +61,10 @@ where
                         }
                         body.extend_from_slice(&temp_buf[..bytes_read]);
                     }
+                    *request.body_mut() = body;
+
                 }
 
-                *request.body_mut() = body;
                 #[cfg(debug_assertions)]
                 debug!("{:?}", request);
                 return Some(request);
