@@ -222,7 +222,7 @@ where
                 Some((_, cfg)) => cfg,
             };
 
-            let mut root_path:Option<&str> = None;
+            let mut root_path: Option<&str> = None;
             let mut handled = false;
 
             for directive in host_config {

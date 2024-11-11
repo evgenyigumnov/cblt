@@ -62,7 +62,6 @@ where
                         body.extend_from_slice(&temp_buf[..bytes_read]);
                     }
                     *request.body_mut() = body;
-
                 }
 
                 #[cfg(debug_assertions)]
