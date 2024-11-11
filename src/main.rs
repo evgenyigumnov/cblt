@@ -222,7 +222,7 @@ where
                 Some((_, cfg)) => cfg,
             };
 
-            let mut root_path = None;
+            let mut root_path:Option<&str> = None;
             let mut handled = false;
 
             for directive in host_config {
@@ -231,14 +231,14 @@ where
                         #[cfg(debug_assertions)]
                         debug!("Root: {} -> {}", pattern, path);
                         if matches_pattern(pattern, request.uri().path()) {
-                            root_path = Some(path.clone());
+                            root_path = Some(path);
                         }
                     }
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
                         file_server::file_directive(
-                            &root_path,
+                            root_path,
                             &request,
                             &mut handled,
                             socket,

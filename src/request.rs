@@ -5,7 +5,7 @@ use http::{Request, StatusCode};
 use httparse::Status;
 use log::debug;
 use std::str;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;
