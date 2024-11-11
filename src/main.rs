@@ -54,10 +54,10 @@ pub struct Server {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // #[cfg(debug_assertions)]
-    // only_in_debug();
-    // #[cfg(not(debug_assertions))]
-    // only_in_production();
+    #[cfg(debug_assertions)]
+    only_in_debug();
+    #[cfg(not(debug_assertions))]
+    only_in_production();
     let num_cpus = num_cpus::get();
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
