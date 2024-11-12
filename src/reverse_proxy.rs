@@ -42,7 +42,14 @@ where
                 let mut stream = resp.bytes_stream();
                 let response = response_builder.body("").unwrap();
                 send_response_stream(socket, response, req_ref, &mut stream).await?;
-                return Ok(status);
+                if status != StatusCode::OK {
+                    return Err(CBLTError::ResponseError {
+                        details: "Bad gateway".to_string(),
+                        status_code: status,
+                    });
+                } else {
+                    return Ok(status);
+                }
             }
             Err(_) => {
                 return Err(CBLTError::ResponseError {

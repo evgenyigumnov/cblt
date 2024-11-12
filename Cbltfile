@@ -1,5 +1,4 @@
-"example.com" {
-    reverse_proxy "/api/*" "http://127.0.0.1:8080"
+"*:80" {
     root "*" "./assets"
     file_server
 }

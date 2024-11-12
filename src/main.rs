@@ -345,29 +345,32 @@ where
                                 return Ok(());
                             }
                             Err(err) => match err {
-                                CBLTError::RequestError {
-                                    details: _,
-                                    status_code,
-                                } => {
-                                    log_request_response::<Vec<u8>>(
-                                        req_ref.method(),
-                                        req_ref.uri(),
-                                        req_ref.headers(),
-                                        status_code,
-                                    );
-                                    return Ok(());
-                                }
                                 CBLTError::DirectiveNotMatched => {}
                                 CBLTError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
-                                    log_request_response::<Vec<u8>>(
-                                        req_ref.method(),
-                                        req_ref.uri(),
-                                        req_ref.headers(),
-                                        status_code,
-                                    );
+                                    let response = error_response(status_code);
+                                    match send_response(socket, response).await {
+                                        Ok(()) => {
+                                            log_request_response::<Vec<u8>>(
+                                                req_ref.method(),
+                                                req_ref.uri(),
+                                                req_ref.headers(),
+                                                status_code,
+                                            );
+                                            return Ok(());
+                                        }
+                                        Err(err) => {
+                                            log_request_response::<Vec<u8>>(
+                                                req_ref.method(),
+                                                req_ref.uri(),
+                                                req_ref.headers(),
+                                                StatusCode::INTERNAL_SERVER_ERROR,
+                                            );
+                                            return Err(err);
+                                        }
+                                    }
                                     return Ok(());
                                 }
                                 other => {
