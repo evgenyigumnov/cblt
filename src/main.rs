@@ -207,7 +207,7 @@ async fn directive_process<S>(
     socket: &mut S,
     server: &Server,
     buffer: SmartVector,
-) -> Result<(), CbltError>
+) -> Result<(), CBLTError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -222,7 +222,7 @@ where
                     return Err(err);
                 }
             }
-            return Err(CbltError::ParseRequestError {
+            return Err(CBLTError::ParseRequestError {
                 details: "Parse request error".to_string(),
             });
         }
@@ -242,7 +242,7 @@ where
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
                             let _ = send_response(socket, response).await;
-                            return Err(CbltError::ResponseError {
+                            return Err(CBLTError::ResponseError {
                                 details: "Forbidden".to_string(),
                                 status_code: StatusCode::FORBIDDEN,
                             });
@@ -280,7 +280,7 @@ where
                                 return Ok(());
                             }
                             Err(error) => match error {
-                                CbltError::ResponseError {
+                                CBLTError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
@@ -306,7 +306,7 @@ where
                                         }
                                     }
                                 }
-                                CbltError::DirectiveNotMatched => {}
+                                CBLTError::DirectiveNotMatched => {}
                                 err => {
                                     log_request_response::<Vec<u8>>(
                                         req_ref.method(),
@@ -345,7 +345,7 @@ where
                                 return Ok(());
                             }
                             Err(err) => match err {
-                                CbltError::RequestError {
+                                CBLTError::RequestError {
                                     details: _,
                                     status_code,
                                 } => {
@@ -357,8 +357,8 @@ where
                                     );
                                     return Ok(());
                                 }
-                                CbltError::DirectiveNotMatched => {}
-                                CbltError::ResponseError {
+                                CBLTError::DirectiveNotMatched => {}
+                                CBLTError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
@@ -465,7 +465,7 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
 }
 
 #[derive(Error, Debug)]
-pub enum CbltError {
+pub enum CBLTError {
     #[error("ParseRequestError: {details:?}")]
     ParseRequestError { details: String },
     #[error("RequestError: {details:?}")]
@@ -494,7 +494,7 @@ pub enum CbltError {
 }
 
 #[derive(Debug)]
-pub struct CbltRequest {
+pub struct CBLTRequest {
     pub host: String,
     pub port: u16,
     pub uri: String,

@@ -1,5 +1,5 @@
 use crate::response::send_response_stream;
-use crate::{matches_pattern, CbltError};
+use crate::{matches_pattern, CBLTError};
 use http::{Request, Response, StatusCode};
 use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -12,7 +12,7 @@ pub async fn proxy_directive<S>(
     req_ref: &Request<Vec<u8>>,
     pattern: &String,
     destination: &String,
-) -> Result<StatusCode, CbltError>
+) -> Result<StatusCode, CBLTError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -45,13 +45,13 @@ where
                 return Ok(status);
             }
             Err(_) => {
-                return Err(CbltError::ResponseError {
+                return Err(CBLTError::ResponseError {
                     details: "Bad gateway".to_string(),
                     status_code: StatusCode::BAD_GATEWAY,
                 });
             }
         }
     } else {
-        return Err(CbltError::DirectiveNotMatched);
+        return Err(CBLTError::DirectiveNotMatched);
     }
 }

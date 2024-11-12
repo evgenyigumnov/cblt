@@ -1,5 +1,5 @@
 use crate::response::send_response_file;
-use crate::CbltError;
+use crate::CBLTError;
 use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
@@ -12,13 +12,13 @@ pub async fn file_directive<S>(
     request: &Request<Vec<u8>>,
     socket: &mut S,
     req_opt: &Request<Vec<u8>>,
-) -> Result<StatusCode, CbltError>
+) -> Result<StatusCode, CBLTError>
 where
     S: AsyncWriteExt + Unpin,
 {
     match root_path {
         None => {
-            return Err(CbltError::ResponseError {
+            return Err(CBLTError::ResponseError {
                 details: "".to_string(),
                 status_code: StatusCode::INTERNAL_SERVER_ERROR,
             });
@@ -40,14 +40,14 @@ where
                         return Ok(StatusCode::OK);
                     }
                     Err(_) => {
-                        return Err(CbltError::ResponseError {
+                        return Err(CBLTError::ResponseError {
                             details: "Not found".to_string(),
                             status_code: StatusCode::NOT_FOUND,
                         });
                     }
                 }
             } else {
-                return Err(CbltError::DirectiveNotMatched);
+                return Err(CBLTError::DirectiveNotMatched);
             }
         }
     }
