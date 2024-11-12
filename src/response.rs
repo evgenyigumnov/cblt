@@ -1,7 +1,7 @@
+use crate::CbltError;
 use async_compression::tokio::write::GzipEncoder;
-use http::{Request, Response, StatusCode};
+use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri};
 use log::{debug, info};
-use std::error::Error;
 use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
@@ -10,12 +10,11 @@ use tracing::instrument;
 pub async fn send_response_file<S>(
     socket: &mut S,
     response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite>,
-    req_opt: Option<&Request<Vec<u8>>>,
-) -> Result<(), Box<dyn Error>>
+    req_opt: &Request<Vec<u8>>,
+) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
-    log_request_response(req_opt, &response);
     let (parts, mut body) = response.into_parts();
 
     // Write status line without allocation
@@ -63,9 +62,10 @@ where
     Ok(())
 }
 
-fn gzip_support_detect(req_opt: Option<&Request<Vec<u8>>>) -> bool {
+fn gzip_support_detect(req_opt: &Request<Vec<u8>>) -> bool {
     let accept_encoding = req_opt
-        .and_then(|req| req.headers().get(http::header::ACCEPT_ENCODING))
+        .headers()
+        .get(http::header::ACCEPT_ENCODING)
         .and_then(|value| value.to_str().ok());
 
     let gzip_supported = accept_encoding
@@ -78,14 +78,13 @@ fn gzip_support_detect(req_opt: Option<&Request<Vec<u8>>>) -> bool {
 pub async fn send_response_stream<S, T>(
     mut socket: &mut S,
     response: Response<&str>,
-    req_opt: Option<&Request<Vec<u8>>>,
+    req_opt: &Request<Vec<u8>>,
     stream: &mut T,
-) -> Result<(), Box<dyn Error>>
+) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
     T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
 {
-    log_request_response(req_opt, &response);
     let (parts, _) = response.into_parts();
 
     // Write status line without allocation
@@ -143,41 +142,30 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn log_request_response<T>(req_opt: Option<&Request<Vec<u8>>>, response: &Response<T>) {
-    if let Some(req) = req_opt {
-        #[cfg(debug_assertions)]
-        debug!("{:?}", req);
-        if let Some(host_header) = req.headers().get("Host") {
-            info!(
-                "Request: {} {} {} {}",
-                req.method(),
-                req.uri(),
-                host_header.to_str().unwrap_or(""),
-                response.status().as_u16()
-            );
-        } else {
-            info!(
-                "Request: {} {} {}",
-                req.method(),
-                req.uri(),
-                response.status().as_u16()
-            );
-        }
-    } else {
-        info!("Response: {}", response.status().as_u16());
-    }
+pub fn log_request_response<T>(
+    method: &Method,
+    uri: &Uri,
+    headers: &HeaderMap<HeaderValue>,
+    status_code: StatusCode,
+) {
+    let host_header = headers
+        .get("Host")
+        .map_or("-", |v| v.to_str().unwrap_or("-"));
+
+    info!(
+        "Request: {} {} {} {}",
+        method,
+        uri,
+        host_header,
+        status_code.as_u16()
+    );
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response<S>(
-    socket: &mut S,
-    response: Response<Vec<u8>>,
-    req_opt: Option<&Request<Vec<u8>>>,
-) -> Result<(), Box<dyn Error>>
+pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
-    log_request_response(req_opt, &response);
     let (parts, body) = response.into_parts();
 
     // Estimate capacity to reduce reallocations

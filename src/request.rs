@@ -1,5 +1,5 @@
 use crate::buffer_pool::SmartVector;
-use crate::response::{error_response, send_response};
+use crate::CbltError;
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;
@@ -12,7 +12,10 @@ pub const BUF_SIZE: usize = 8192;
 pub const STATIC_BUF_SIZE: usize = 1024;
 pub const HEADER_BUF_SIZE: usize = 32;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn socket_to_request<S>(socket: &mut S, buffer: SmartVector) -> Option<Request<Vec<u8>>>
+pub async fn socket_to_request<S>(
+    socket: &mut S,
+    buffer: SmartVector,
+) -> Result<Request<Vec<u8>>, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -35,9 +38,10 @@ where
                 let req_str = match str::from_utf8(&buf[..header_len]) {
                     Ok(v) => v,
                     Err(_) => {
-                        let response = error_response(StatusCode::BAD_REQUEST);
-                        let _ = send_response(socket, response, None).await;
-                        return None;
+                        return Err(CbltError::RequestError {
+                            details: "Bad request".to_string(),
+                            status_code: StatusCode::BAD_REQUEST,
+                        });
                     }
                 };
 
@@ -45,9 +49,10 @@ where
                 let (mut request, content_length) = match parse_request_headers(req_str) {
                     Some((req, content_length)) => (req, content_length),
                     None => {
-                        let response = error_response(StatusCode::BAD_REQUEST);
-                        let _ = send_response(socket, response, None).await;
-                        return None;
+                        return Err(CbltError::RequestError {
+                            details: "Bad request".to_string(),
+                            status_code: StatusCode::BAD_REQUEST,
+                        });
                     }
                 };
 
@@ -66,21 +71,25 @@ where
 
                 #[cfg(debug_assertions)]
                 debug!("{:?}", request);
-                return Some(request);
+                return Ok(request);
             }
             Ok(Status::Partial) => {
                 // Need to read more data
                 continue;
             }
             Err(_) => {
-                let response = error_response(StatusCode::BAD_REQUEST);
-                let _ = send_response(socket, response, None).await;
-                return None;
+                return Err(CbltError::RequestError {
+                    details: "Bad request".to_string(),
+                    status_code: StatusCode::BAD_REQUEST,
+                });
             }
         }
     }
 
-    None
+    return Err(CbltError::ResponseError {
+        details: "Bad request".to_string(),
+        status_code: StatusCode::BAD_REQUEST,
+    });
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]

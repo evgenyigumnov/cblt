@@ -1,7 +1,7 @@
 use crate::buffer_pool::{BufferPool, SmartVector};
 use crate::config::{build_config, Directive};
 use crate::request::{socket_to_request, BUF_SIZE};
-use crate::response::{error_response, send_response};
+use crate::response::{error_response, log_request_response, send_response};
 use clap::Parser;
 use http::{Response, StatusCode};
 use kdl::KdlDocument;
@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::str;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -113,6 +114,11 @@ async fn server() -> Result<(), Box<dyn Error>> {
             })
             .or_insert({
                 let mut hosts = HashMap::new();
+                let host = if host.contains(":") {
+                    host.split(":").collect::<Vec<&str>>()[0]
+                } else {
+                    host.as_str()
+                };
                 hosts.insert(host.to_string(), directives.clone());
                 Server {
                     port,
@@ -171,11 +177,19 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<
             let buffer = buffer_pool_arc.get_buffer().await.unwrap();
             match acceptor_clone {
                 None => {
-                    directive_process(&mut stream, &server_clone, buffer.clone()).await;
+                    if let Err(err) =
+                        directive_process(&mut stream, &server_clone, buffer.clone()).await
+                    {
+                        error!("Error: {}", err);
+                    }
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        directive_process(&mut stream, &server_clone, buffer.clone()).await;
+                        if let Err(err) =
+                            directive_process(&mut stream, &server_clone, buffer.clone()).await
+                        {
+                            error!("Error: {}", err);
+                        }
                     }
                     Err(err) => {
                         error!("Error: {}", err);
@@ -189,16 +203,31 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn directive_process<S>(socket: &mut S, server: &Server, buffer: SmartVector)
+async fn directive_process<S>(
+    socket: &mut S,
+    server: &Server,
+    buffer: SmartVector,
+) -> Result<(), CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     match socket_to_request(socket, buffer).await {
-        None => {
-            return;
+        Err(_) => {
+            let response = error_response(StatusCode::BAD_REQUEST);
+            let ret = send_response(socket, response).await;
+            match ret {
+                Ok(()) => {}
+                Err(err) => {
+                    info!("Error: {}", err);
+                    return Err(err);
+                }
+            }
+            return Err(CbltError::ParseRequestError {
+                details: "Parse request error".to_string(),
+            });
         }
-        Some(request) => {
-            let req_opt = Some(&request);
+        Ok(request) => {
+            let req_ref = &request;
             let host = match request.headers().get("Host") {
                 Some(h) => h.to_str().unwrap_or(""),
                 None => "",
@@ -211,10 +240,12 @@ where
                     let host_config = match server.hosts.get(host) {
                         Some(cfg) => cfg,
                         None => {
-                            let req_opt = Some(&request);
                             let response = error_response(StatusCode::FORBIDDEN);
-                            let _ = send_response(socket, response, req_opt).await;
-                            return;
+                            let _ = send_response(socket, response).await;
+                            return Err(CbltError::ResponseError {
+                                details: "Forbidden".to_string(),
+                                status_code: StatusCode::FORBIDDEN,
+                            });
                         }
                     };
                     host_config
@@ -223,7 +254,6 @@ where
             };
 
             let mut root_path: Option<&str> = None;
-            let mut handled = false;
 
             for directive in host_config {
                 match directive {
@@ -237,14 +267,57 @@ where
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
-                        file_server::file_directive(
-                            root_path,
-                            &request,
-                            &mut handled,
-                            socket,
-                            req_opt,
-                        )
-                        .await;
+                        let ret =
+                            file_server::file_directive(root_path, &request, socket, req_ref).await;
+                        match ret {
+                            Ok(_) => {
+                                log_request_response::<Vec<u8>>(
+                                    req_ref.method(),
+                                    req_ref.uri(),
+                                    req_ref.headers(),
+                                    StatusCode::OK,
+                                );
+                                return Ok(());
+                            }
+                            Err(error) => match error {
+                                CbltError::ResponseError {
+                                    details: _,
+                                    status_code,
+                                } => {
+                                    let response = error_response(status_code);
+                                    match send_response(socket, response).await {
+                                        Ok(()) => {
+                                            log_request_response::<Vec<u8>>(
+                                                req_ref.method(),
+                                                req_ref.uri(),
+                                                req_ref.headers(),
+                                                status_code,
+                                            );
+                                            return Ok(());
+                                        }
+                                        Err(err) => {
+                                            log_request_response::<Vec<u8>>(
+                                                req_ref.method(),
+                                                req_ref.uri(),
+                                                req_ref.headers(),
+                                                StatusCode::INTERNAL_SERVER_ERROR,
+                                            );
+                                            return Err(err);
+                                        }
+                                    }
+                                }
+                                CbltError::DirectiveNotMatched => {}
+                                err => {
+                                    log_request_response::<Vec<u8>>(
+                                        req_ref.method(),
+                                        req_ref.uri(),
+                                        req_ref.headers(),
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                    );
+                                    return Err(err);
+                                }
+                            },
+                        }
                         break;
                     }
                     Directive::ReverseProxy {
@@ -253,17 +326,60 @@ where
                     } => {
                         #[cfg(debug_assertions)]
                         debug!("Reverse proxy: {} -> {}", pattern, destination);
-                        reverse_proxy::proxy_directive(
+                        match reverse_proxy::proxy_directive(
                             &request,
-                            &mut handled,
                             socket,
-                            req_opt,
+                            req_ref,
                             pattern,
                             destination,
                         )
-                        .await;
-                        if handled {
-                            break;
+                        .await
+                        {
+                            Ok(status) => {
+                                log_request_response::<Vec<u8>>(
+                                    req_ref.method(),
+                                    req_ref.uri(),
+                                    req_ref.headers(),
+                                    status,
+                                );
+                                return Ok(());
+                            }
+                            Err(err) => match err {
+                                CbltError::RequestError {
+                                    details: _,
+                                    status_code,
+                                } => {
+                                    log_request_response::<Vec<u8>>(
+                                        req_ref.method(),
+                                        req_ref.uri(),
+                                        req_ref.headers(),
+                                        status_code,
+                                    );
+                                    return Ok(());
+                                }
+                                CbltError::DirectiveNotMatched => {}
+                                CbltError::ResponseError {
+                                    details: _,
+                                    status_code,
+                                } => {
+                                    log_request_response::<Vec<u8>>(
+                                        req_ref.method(),
+                                        req_ref.uri(),
+                                        req_ref.headers(),
+                                        status_code,
+                                    );
+                                    return Ok(());
+                                }
+                                other => {
+                                    log_request_response::<Vec<u8>>(
+                                        req_ref.method(),
+                                        req_ref.uri(),
+                                        req_ref.headers(),
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                    );
+                                    return Err(other);
+                                }
+                            },
                         }
                     }
                     Directive::Redir { destination } => {
@@ -273,18 +389,48 @@ where
                             .header("Location", &dest)
                             .body(Vec::new()) // Empty body for redirects
                             .unwrap();
-                        let _ = send_response(socket, response, req_opt).await;
-                        handled = true;
-                        break;
+                        match send_response(socket, response).await {
+                            Ok(_) => {
+                                log_request_response::<Vec<u8>>(
+                                    req_ref.method(),
+                                    req_ref.uri(),
+                                    req_ref.headers(),
+                                    StatusCode::FOUND,
+                                );
+                                return Ok(());
+                            }
+                            Err(err) => {
+                                log_request_response::<Vec<u8>>(
+                                    req_ref.method(),
+                                    req_ref.uri(),
+                                    req_ref.headers(),
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                );
+                                return Err(err);
+                            }
+                        }
                     }
                     Directive::Tls { .. } => {}
                 }
             }
 
-            if !handled {
-                let response = error_response(StatusCode::NOT_FOUND);
-                let _ = send_response(socket, response, req_opt).await;
+            let response = error_response(StatusCode::NOT_FOUND);
+            if let Err(err) = send_response(socket, response).await {
+                log_request_response::<Vec<u8>>(
+                    req_ref.method(),
+                    req_ref.uri(),
+                    req_ref.headers(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+                return Err(err);
             }
+            log_request_response::<Vec<u8>>(
+                req_ref.method(),
+                req_ref.uri(),
+                req_ref.headers(),
+                StatusCode::NOT_FOUND,
+            );
+            Ok(())
         }
     }
 }
@@ -316,4 +462,42 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     } else {
         pattern == path
     }
+}
+
+#[derive(Error, Debug)]
+pub enum CbltError {
+    #[error("ParseRequestError: {details:?}")]
+    ParseRequestError { details: String },
+    #[error("RequestError: {details:?}")]
+    RequestError {
+        details: String,
+        status_code: StatusCode,
+    },
+    #[error("DirectiveNotMatched")]
+    DirectiveNotMatched,
+    #[error("ResponseError: {details:?}")]
+    ResponseError {
+        details: String,
+        status_code: StatusCode,
+    },
+    #[error("IOError: {source:?}")]
+    IOError {
+        #[from]
+        source: std::io::Error,
+    },
+    // from reqwest::Error
+    #[error("ReqwestError: {source:?}")]
+    ReqwestError {
+        #[from]
+        source: reqwest::Error,
+    },
+}
+
+#[derive(Debug)]
+pub struct CbltRequest {
+    pub host: String,
+    pub port: u16,
+    pub uri: String,
+    pub method: String,
+    pub status_code: StatusCode,
 }
