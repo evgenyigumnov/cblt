@@ -1,4 +1,5 @@
-use crate::response::{error_response, send_response, send_response_file};
+use crate::response::send_response_file;
+use crate::CBLTError;
 use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
@@ -9,18 +10,18 @@ use tracing::instrument;
 pub async fn file_directive<S>(
     root_path: Option<&str>,
     request: &Request<Vec<u8>>,
-    handled: &mut bool,
     socket: &mut S,
-    req_opt: Option<&Request<Vec<u8>>>,
-) where
+    req_opt: &Request<Vec<u8>>,
+) -> Result<StatusCode, CBLTError>
+where
     S: AsyncWriteExt + Unpin,
 {
     match root_path {
         None => {
-            let response = error_response(StatusCode::INTERNAL_SERVER_ERROR);
-            let _ = send_response(&mut *socket, response, req_opt).await;
-            *handled = true;
-            return;
+            return Err(CBLTError::ResponseError {
+                details: "".to_string(),
+                status_code: StatusCode::INTERNAL_SERVER_ERROR,
+            });
         }
         Some(root) => {
             if let Some(mut file_path) = sanitize_path(
@@ -35,22 +36,18 @@ pub async fn file_directive<S>(
                     Ok(file) => {
                         let content_length = file_size(&file).await;
                         let response = file_response(file, content_length);
-                        let _ = send_response_file(socket, response, req_opt).await;
-                        *handled = true;
-                        return;
+                        send_response_file(socket, response, req_opt).await?;
+                        return Ok(StatusCode::OK);
                     }
                     Err(_) => {
-                        let response = error_response(StatusCode::NOT_FOUND);
-                        let _ = send_response(&mut *socket, response, req_opt).await;
-                        *handled = true;
-                        return;
+                        return Err(CBLTError::ResponseError {
+                            details: "Not found".to_string(),
+                            status_code: StatusCode::NOT_FOUND,
+                        });
                     }
                 }
             } else {
-                let response = error_response(StatusCode::FORBIDDEN);
-                let _ = send_response(&mut *socket, response, req_opt).await;
-                *handled = true;
-                return;
+                return Err(CBLTError::DirectiveNotMatched);
             }
         }
     }

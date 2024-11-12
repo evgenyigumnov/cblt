@@ -1,5 +1,4 @@
 "*:80" {
-    //reverse_proxy "*" "http://127.0.0.1:8080"
     root "*" "./assets"
     file_server
 }

@@ -1,5 +1,5 @@
-use crate::matches_pattern;
-use crate::response::{error_response, log_request_response, send_response, send_response_stream};
+use crate::response::send_response_stream;
+use crate::{matches_pattern, CBLTError};
 use http::{Request, Response, StatusCode};
 use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8,12 +8,12 @@ use tracing::instrument;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn proxy_directive<S>(
     request: &Request<Vec<u8>>,
-    handled: &mut bool,
     socket: &mut S,
-    req_opt: Option<&Request<Vec<u8>>>,
+    req_ref: &Request<Vec<u8>>,
     pattern: &String,
     destination: &String,
-) where
+) -> Result<StatusCode, CBLTError>
+where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     if matches_pattern(pattern, request.uri().path()) {
@@ -41,19 +41,24 @@ pub async fn proxy_directive<S>(
                 }
                 let mut stream = resp.bytes_stream();
                 let response = response_builder.body("").unwrap();
-                log_request_response(req_opt, &response);
-                let _ = send_response_stream(socket, response, req_opt, &mut stream).await;
-                *handled = true;
-
-                return;
+                send_response_stream(socket, response, req_ref, &mut stream).await?;
+                if status != StatusCode::OK {
+                    return Err(CBLTError::ResponseError {
+                        details: "Bad gateway".to_string(),
+                        status_code: status,
+                    });
+                } else {
+                    return Ok(status);
+                }
             }
             Err(_) => {
-                let response = error_response(StatusCode::BAD_GATEWAY);
-                log_request_response(req_opt, &response);
-                let _ = send_response(socket, response, req_opt).await;
-                *handled = true;
-                return;
+                return Err(CBLTError::ResponseError {
+                    details: "Bad gateway".to_string(),
+                    status_code: StatusCode::BAD_GATEWAY,
+                });
             }
         }
+    } else {
+        return Err(CBLTError::DirectiveNotMatched);
     }
 }

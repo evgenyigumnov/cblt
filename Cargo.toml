@@ -38,6 +38,7 @@ futures-core = "0.3.31"
 futures-util = "0.3.31"
 async-compression = { version = "0.4.17", features = ["tokio", "gzip"] }
 num_cpus = "1.16.0"
+thiserror = "2.0.3"
 
 [profile.release]
 lto = true
