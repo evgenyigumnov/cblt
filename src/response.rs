@@ -1,6 +1,6 @@
 use crate::error::CbltError;
 use async_compression::tokio::write::GzipEncoder;
-use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri};
+use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -142,12 +142,11 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn log_request_response<T>(
-    method: &Method,
-    uri: &Uri,
-    headers: &HeaderMap<HeaderValue>,
-    status_code: StatusCode,
-) {
+pub fn log_request_response<T>(request: &Request<Vec<u8>>, status_code: StatusCode) {
+    let method = &request.method();
+    let uri = request.uri();
+    let headers = request.headers();
+
     let host_header = headers
         .get("Host")
         .map_or("-", |v| v.to_str().unwrap_or("-"));

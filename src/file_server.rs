@@ -11,7 +11,6 @@ pub async fn file_directive<S>(
     root_path: Option<&str>,
     request: &Request<Vec<u8>>,
     socket: &mut S,
-    req_opt: &Request<Vec<u8>>,
 ) -> Result<StatusCode, CbltError>
 where
     S: AsyncWriteExt + Unpin,
@@ -36,7 +35,7 @@ where
                     Ok(file) => {
                         let content_length = file_size(&file).await;
                         let response = file_response(file, content_length);
-                        send_response_file(socket, response, req_opt).await?;
+                        send_response_file(socket, response, request).await?;
                         return Ok(StatusCode::OK);
                     }
                     Err(_) => {

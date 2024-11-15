@@ -234,7 +234,6 @@ where
             });
         }
         Ok(request) => {
-            let req_ref = &request;
             let host = match request.headers().get("Host") {
                 Some(h) => h.to_str().unwrap_or(""),
                 None => "",
@@ -274,16 +273,10 @@ where
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
-                        let ret =
-                            file_server::file_directive(root_path, &request, socket, req_ref).await;
+                        let ret = file_server::file_directive(root_path, &request, socket).await;
                         match ret {
                             Ok(_) => {
-                                log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
-                                    StatusCode::OK,
-                                );
+                                log_request_response::<Vec<u8>>(&request, StatusCode::OK);
                                 return Ok(());
                             }
                             Err(error) => match error {
@@ -294,19 +287,12 @@ where
                                     let response = error_response(status_code);
                                     match send_response(socket, response).await {
                                         Ok(()) => {
-                                            log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
-                                                status_code,
-                                            );
+                                            log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
                                         }
                                         Err(err) => {
                                             log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
+                                                &request,
                                                 StatusCode::INTERNAL_SERVER_ERROR,
                                             );
                                             return Err(err);
@@ -316,9 +302,7 @@ where
                                 CbltError::DirectiveNotMatched => {}
                                 err => {
                                     log_request_response::<Vec<u8>>(
-                                        req_ref.method(),
-                                        req_ref.uri(),
-                                        req_ref.headers(),
+                                        &request,
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                     );
                                     return Err(err);
@@ -336,7 +320,6 @@ where
                         match reverse_proxy::proxy_directive(
                             &request,
                             socket,
-                            req_ref,
                             pattern,
                             destination,
                             client_reqwest.clone(),
@@ -344,12 +327,7 @@ where
                         .await
                         {
                             Ok(status) => {
-                                log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
-                                    status,
-                                );
+                                log_request_response::<Vec<u8>>(&request, status);
                                 return Ok(());
                             }
                             Err(err) => match err {
@@ -361,19 +339,12 @@ where
                                     let response = error_response(status_code);
                                     match send_response(socket, response).await {
                                         Ok(()) => {
-                                            log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
-                                                status_code,
-                                            );
+                                            log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
                                         }
                                         Err(err) => {
                                             log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
+                                                &request,
                                                 StatusCode::INTERNAL_SERVER_ERROR,
                                             );
                                             return Err(err);
@@ -382,9 +353,7 @@ where
                                 }
                                 other => {
                                     log_request_response::<Vec<u8>>(
-                                        req_ref.method(),
-                                        req_ref.uri(),
-                                        req_ref.headers(),
+                                        &request,
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                     );
                                     return Err(other);
@@ -401,19 +370,12 @@ where
                             .unwrap();
                         match send_response(socket, response).await {
                             Ok(_) => {
-                                log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
-                                    StatusCode::FOUND,
-                                );
+                                log_request_response::<Vec<u8>>(&request, StatusCode::FOUND);
                                 return Ok(());
                             }
                             Err(err) => {
                                 log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
+                                    &request,
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                 );
                                 return Err(err);
@@ -426,20 +388,10 @@ where
 
             let response = error_response(StatusCode::NOT_FOUND);
             if let Err(err) = send_response(socket, response).await {
-                log_request_response::<Vec<u8>>(
-                    req_ref.method(),
-                    req_ref.uri(),
-                    req_ref.headers(),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                );
+                log_request_response::<Vec<u8>>(&request, StatusCode::INTERNAL_SERVER_ERROR);
                 return Err(err);
             }
-            log_request_response::<Vec<u8>>(
-                req_ref.method(),
-                req_ref.uri(),
-                req_ref.headers(),
-                StatusCode::NOT_FOUND,
-            );
+            log_request_response::<Vec<u8>>(&request, StatusCode::NOT_FOUND);
             Ok(())
         }
     }

@@ -10,9 +10,8 @@ use tracing::instrument;
 pub async fn proxy_directive<S>(
     request: &Request<Vec<u8>>,
     socket: &mut S,
-    req_ref: &Request<Vec<u8>>,
-    pattern: &String,
-    destination: &String,
+    pattern: &str,
+    destination: &str,
     client_reqwest: Client,
 ) -> Result<StatusCode, CbltError>
 where
@@ -42,7 +41,7 @@ where
                 }
                 let mut stream = resp.bytes_stream();
                 let response = response_builder.body("").unwrap();
-                send_response_stream(socket, response, req_ref, &mut stream).await?;
+                send_response_stream(socket, response, request, &mut stream).await?;
                 if status != StatusCode::OK {
                     return Err(CbltError::ResponseError {
                         details: "Bad gateway".to_string(),
