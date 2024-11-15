@@ -21,8 +21,8 @@ where
         let dest_uri = [destination, request.uri().path()].concat();
         #[cfg(debug_assertions)]
         debug!("Destination URI: {}", dest_uri);
-        let mut req_builder = client_reqwest.request(request.method().clone(), dest_uri);
 
+        let mut req_builder = client_reqwest.request(request.method().clone(), dest_uri);
         for (key, value) in request.headers().iter() {
             req_builder = req_builder.header(key, value);
         }
