@@ -61,8 +61,18 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                     "reverse_proxy" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args.get(0).unwrap().to_string();
-                            let destination = args.get(1).unwrap().to_string();
+                            let pattern = args
+                                .get(0)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "pattern absent".to_string(),
+                                })?
+                                .to_string();
+                            let destination = args
+                                .get(1)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "destination absent".to_string(),
+                                })?
+                                .to_string();
                             directives.push(Directive::ReverseProxy {
                                 pattern,
                                 destination,
@@ -77,7 +87,12 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                     "redir" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 1 {
-                            let destination = args.get(0).unwrap().to_string();
+                            let destination = args
+                                .get(0)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "destination absent".to_string(),
+                                })?
+                                .to_string();
                             directives.push(Directive::Redir { destination });
                         } else {
                             anyhow::bail!("Invalid 'redir' directive for host {}", hostname);
@@ -86,8 +101,18 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                     "tls" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let cert_path = args.get(0).unwrap().to_string();
-                            let key_path = args.get(1).unwrap().to_string();
+                            let cert_path = args
+                                .get(0)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "cert path absent".to_string(),
+                                })?
+                                .to_string();
+                            let key_path = args
+                                .get(1)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "key path absent".to_string(),
+                                })?
+                                .to_string();
                             directives.push(Directive::Tls {
                                 cert: cert_path,
                                 key: key_path,

@@ -107,7 +107,7 @@ where
     }
     // Write headers without allocation
     for (key, value) in parts.headers.iter() {
-        debug!("{}: {}", key.as_str(), value.to_str().unwrap());
+        debug!("{}: {}", key.as_str(), value.to_str()?);
         socket.write_all(key.as_str().as_bytes()).await?;
         socket.write_all(b": ").await?;
         socket.write_all(value.as_bytes()).await?;

@@ -53,6 +53,12 @@ pub enum CbltError {
         #[from]
         source: http::Error,
     },
+    // from http::header::ToStrError
+    #[error("ToStrError: {source:?}")]
+    ToStrError {
+        #[from]
+        source: http::header::ToStrError,
+    },
     #[error("AbsentKey")]
     AbsentKey,
     #[error("AbsentCert")]
