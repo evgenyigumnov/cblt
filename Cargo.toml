@@ -8,7 +8,7 @@ authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
 repository = "https://github.com/evgenyigumnov/cblt"
 license = "MIT"
 description = "Safe and fast minimalistic web server, written in Rust, that serves files from a directory and proxies requests to another server."
-keywords = ["web-server", "http", "proxy", "reverse-proxy", "file-server"]
+keywords = ["web-server", "webserver", "reverse-proxy", "file-server", "static-server"]
 categories = ["web-programming", "network-programming", "development-tools"]
 
 exclude = ["benchmark", "assets"]
