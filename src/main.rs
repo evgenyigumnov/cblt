@@ -156,7 +156,9 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Cblt
     };
 
     let semaphore = Arc::new(Semaphore::new(max_connections));
-    let addr = format!("0.0.0.0:{}", server.port);
+    let port_string = server.port.to_string();
+    let port_str = port_string.as_str();
+    let addr = ["0.0.0.0:", port_str].concat();
     let listener = TcpListener::bind(addr).await?;
     let buffer_pool = Arc::new(BufferPool::new(max_connections, BUF_SIZE));
     info!("Listen port: {}", server.port);
@@ -423,15 +425,6 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     } else {
         pattern == path
     }
-}
-
-#[derive(Debug)]
-pub struct CBLTRequest {
-    pub host: String,
-    pub port: u16,
-    pub uri: String,
-    pub method: String,
-    pub status_code: StatusCode,
 }
 
 pub struct ParsedHost {

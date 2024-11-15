@@ -57,18 +57,19 @@ where
                 };
 
                 if let Some(content_length) = content_length {
-                    let mut body = buf[header_len..].to_vec(); // Any remaining data is part of body
+                    let mut body = buf[header_len..].to_vec();
+                    let mut temp_buf = vec![0; content_length - body.len()];
+
                     while body.len() < content_length {
-                        let mut temp_buf = vec![0; content_length - body.len()];
                         let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
                         if bytes_read == 0 {
-                            break; // Connection closed
+                            break;
                         }
                         body.extend_from_slice(&temp_buf[..bytes_read]);
                     }
+
                     *request.body_mut() = body;
                 }
-
                 #[cfg(debug_assertions)]
                 debug!("{:?}", request);
                 return Ok(request);

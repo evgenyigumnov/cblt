@@ -3,19 +3,21 @@ use async_compression::tokio::write::GzipEncoder;
 use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::pin;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_file<S>(
-    socket: &mut S,
-    response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite>,
+    mut socket: S,
+    response: Response<impl AsyncRead + Debug + AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
 ) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
-    let (parts, mut body) = response.into_parts();
+    let (parts, mut b) = response.into_parts();
+    let mut body = pin::pin!(b);
 
     // Write status line without allocation
     socket.write_all(b"HTTP/1.1 ").await?;
@@ -51,9 +53,9 @@ where
         debug!("Gzip supported");
         let gzip_stream = GzipEncoder::new(body);
         let mut gzip_reader = tokio::io::BufReader::new(gzip_stream);
-        tokio::io::copy(&mut gzip_reader, socket).await?;
+        tokio::io::copy(&mut gzip_reader, &mut socket).await?;
     } else {
-        tokio::io::copy(&mut body, socket).await?;
+        tokio::io::copy(&mut body, &mut socket).await?;
     }
 
     // Ensure all data is flushed
@@ -169,12 +171,17 @@ where
 
     // Estimate capacity to reduce reallocations
     let mut resp_bytes = Vec::with_capacity(128 + body.len());
-    let status_line = format!(
-        "HTTP/1.1 {} {}\r\n",
-        parts.status.as_u16(),
-        parts.status.canonical_reason().unwrap_or("")
-    );
-    resp_bytes.extend_from_slice(status_line.as_bytes());
+    resp_bytes.write_all(b"HTTP/1.1 ").await?;
+
+    let mut itoa_buf = itoa::Buffer::new();
+    let status_str = itoa_buf.format(parts.status.as_u16());
+    resp_bytes.write_all(status_str.as_bytes()).await?;
+
+    resp_bytes.write_all(b" ").await?;
+    resp_bytes
+        .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
+        .await?;
+    resp_bytes.flush().await?;
 
     for (key, value) in parts.headers.iter() {
         resp_bytes.extend_from_slice(key.as_str().as_bytes());
