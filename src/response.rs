@@ -13,7 +13,8 @@ pub async fn send_response_file<S>(
     response: Response<impl AsyncRead + Debug + AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
 ) -> Result<(), CbltError>
-where S: AsyncWriteExt + Unpin,
+where
+    S: AsyncWriteExt + Unpin,
 {
     let (parts, mut b) = response.into_parts();
     let mut body = pin::pin!(b);
