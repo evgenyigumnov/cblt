@@ -58,10 +58,10 @@ pub struct Server {
 }
 
 fn main() -> anyhow::Result<()> {
-    // #[cfg(debug_assertions)]
-    // only_in_debug();
-    // #[cfg(not(debug_assertions))]
-    // only_in_production();
+    #[cfg(debug_assertions)]
+    only_in_debug();
+    #[cfg(not(debug_assertions))]
+    only_in_production();
     let num_cpus = std::thread::available_parallelism()?.get();
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
