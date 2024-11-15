@@ -1,4 +1,4 @@
-use crate::CBLTError;
+use crate::CbltError;
 use async_compression::tokio::write::GzipEncoder;
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri};
 use log::{debug, info};
@@ -11,7 +11,7 @@ pub async fn send_response_file<S>(
     socket: &mut S,
     response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
-) -> Result<(), CBLTError>
+) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
@@ -80,7 +80,7 @@ pub async fn send_response_stream<S, T>(
     response: Response<&str>,
     req_opt: &Request<Vec<u8>>,
     stream: &mut T,
-) -> Result<(), CBLTError>
+) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
     T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
@@ -162,7 +162,7 @@ pub fn log_request_response<T>(
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CBLTError>
+pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {

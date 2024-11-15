@@ -2,14 +2,15 @@ use crate::buffer_pool::{BufferPool, SmartVector};
 use crate::config::{build_config, Directive};
 use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, log_request_response, send_response};
+use anyhow::Context;
 use clap::Parser;
 use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
+use rustls::pki_types;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::collections::HashMap;
-use std::error::Error;
 use std::str;
 use std::sync::Arc;
 use thiserror::Error;
@@ -54,12 +55,12 @@ pub struct Server {
     pub key: Option<String>,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]
     only_in_production();
-    let num_cpus = num_cpus::get();
+    let num_cpus = std::thread::available_parallelism()?.get();
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
         .worker_threads(num_cpus)
@@ -71,18 +72,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(())
     })
 }
-async fn server() -> Result<(), Box<dyn Error>> {
+async fn server() -> anyhow::Result<()> {
     let args = Args::parse();
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
-    let cbltfile_content = match fs::read_to_string(&args.cfg).await {
-        Ok(file) => file,
-        Err(_) => {
-            error!("Cbltfile not found");
-            panic!("Cbltfile not found");
-        }
-    };
+    let cbltfile_content = fs::read_to_string(&args.cfg)
+        .await
+        .context("Failed to read Cbltfile")?;
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = build_config(&doc)?;
 
@@ -99,10 +96,8 @@ async fn server() -> Result<(), Box<dyn Error>> {
                 key_path = Some(key.to_string());
             }
         });
-        if host.contains(":") {
-            let parts: Vec<&str> = host.split(":").collect();
-            port = parts[1].parse().unwrap();
-        }
+        let parsed_host = ParsedHost::from_str(&host);
+        let port = parsed_host.port.unwrap_or(port);
         debug!("Host: {}, Port: {}", host, port);
         servers
             .entry(port)
@@ -114,12 +109,8 @@ async fn server() -> Result<(), Box<dyn Error>> {
             })
             .or_insert({
                 let mut hosts = HashMap::new();
-                let host = if host.contains(":") {
-                    host.split(":").collect::<Vec<&str>>()[0]
-                } else {
-                    host.as_str()
-                };
-                hosts.insert(host.to_string(), directives.clone());
+                let host = parsed_host.host;
+                hosts.insert(host, directives.clone());
                 Server {
                     port,
                     hosts,
@@ -148,11 +139,12 @@ async fn server() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<dyn Error>> {
+async fn server_task(server: &Server, max_connections: usize) -> Result<(), CbltError> {
     let acceptor = if server.cert.is_some() {
-        let certs = CertificateDer::pem_file_iter(server.cert.clone().unwrap())?
-            .collect::<Result<Vec<_>, _>>()?;
-        let key = PrivateKeyDer::from_pem_file(server.key.clone().unwrap())?;
+        let certs =
+            CertificateDer::pem_file_iter(server.cert.clone().ok_or(CbltError::AbsentCert)?)?
+                .collect::<Result<Vec<_>, _>>()?;
+        let key = PrivateKeyDer::from_pem_file(server.key.clone().ok_or(CbltError::AbsentKey)?)?;
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)?;
@@ -207,7 +199,7 @@ async fn directive_process<S>(
     socket: &mut S,
     server: &Server,
     buffer: SmartVector,
-) -> Result<(), CBLTError>
+) -> Result<(), CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -222,7 +214,7 @@ where
                     return Err(err);
                 }
             }
-            return Err(CBLTError::ParseRequestError {
+            return Err(CbltError::ParseRequestError {
                 details: "Parse request error".to_string(),
             });
         }
@@ -242,7 +234,7 @@ where
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
                             let _ = send_response(socket, response).await;
-                            return Err(CBLTError::ResponseError {
+                            return Err(CbltError::ResponseError {
                                 details: "Forbidden".to_string(),
                                 status_code: StatusCode::FORBIDDEN,
                             });
@@ -280,7 +272,7 @@ where
                                 return Ok(());
                             }
                             Err(error) => match error {
-                                CBLTError::ResponseError {
+                                CbltError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
@@ -306,7 +298,7 @@ where
                                         }
                                     }
                                 }
-                                CBLTError::DirectiveNotMatched => {}
+                                CbltError::DirectiveNotMatched => {}
                                 err => {
                                     log_request_response::<Vec<u8>>(
                                         req_ref.method(),
@@ -345,8 +337,8 @@ where
                                 return Ok(());
                             }
                             Err(err) => match err {
-                                CBLTError::DirectiveNotMatched => {}
-                                CBLTError::ResponseError {
+                                CbltError::DirectiveNotMatched => {}
+                                CbltError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
@@ -371,7 +363,6 @@ where
                                             return Err(err);
                                         }
                                     }
-                                    return Ok(());
                                 }
                                 other => {
                                     log_request_response::<Vec<u8>>(
@@ -468,7 +459,7 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
 }
 
 #[derive(Error, Debug)]
-pub enum CBLTError {
+pub enum CbltError {
     #[error("ParseRequestError: {details:?}")]
     ParseRequestError { details: String },
     #[error("RequestError: {details:?}")]
@@ -494,6 +485,28 @@ pub enum CBLTError {
         #[from]
         source: reqwest::Error,
     },
+    // from AcquireError
+    #[error("AcquireError: {source:?}")]
+    AcquireError {
+        #[from]
+        source: tokio::sync::AcquireError,
+    },
+    // from rustls::Error
+    #[error("RustlsError: {source:?}")]
+    RustlsError {
+        #[from]
+        source: rustls::Error,
+    },
+    // from pki_types::pem::Error
+    #[error("PemError: {source:?}")]
+    PemError {
+        #[from]
+        source: pki_types::pem::Error,
+    },
+    #[error("AbsentKey")]
+    AbsentKey,
+    #[error("AbsentCert")]
+    AbsentCert,
 }
 
 #[derive(Debug)]
@@ -503,4 +516,26 @@ pub struct CBLTRequest {
     pub uri: String,
     pub method: String,
     pub status_code: StatusCode,
+}
+
+pub struct ParsedHost {
+    pub host: String,
+    pub port: Option<u16>,
+}
+
+impl ParsedHost {
+    fn from_str(host_str: &str) -> Self {
+        if let Some((host_part, port_part)) = host_str.split_once(':') {
+            let port = port_part.parse().ok();
+            ParsedHost {
+                host: host_part.to_string(),
+                port,
+            }
+        } else {
+            ParsedHost {
+                host: host_str.to_string(),
+                port: None,
+            }
+        }
+    }
 }
