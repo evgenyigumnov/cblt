@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 pub type SmartVector = Arc<Mutex<Vec<u8>>>;
 pub struct BufferPool {
     pool: Arc<Mutex<Vec<SmartVector>>>,
+    buffer_size: usize,
 }
 
 impl BufferPool {
@@ -13,16 +14,29 @@ impl BufferPool {
             .collect();
         BufferPool {
             pool: Arc::new(Mutex::new(pool)),
+            buffer_size,
         }
     }
 
-    pub async fn get_buffer(&self) -> Option<SmartVector> {
+    pub async fn get_buffer(&self) -> SmartVector {
         let mut pool = self.pool.lock().await;
-        pool.pop()
+        if let Some(buffer) = pool.pop() {
+            buffer
+        } else {
+            Arc::new(Mutex::new(Vec::with_capacity(self.buffer_size)))
+        }
     }
 
     pub async fn return_buffer(&self, buffer: SmartVector) {
         let mut pool = self.pool.lock().await;
-        pool.push(buffer);
+        let buff = buffer.lock().await;
+
+        if buff.capacity() > self.buffer_size {
+            let new_buffer = Arc::new(Mutex::new(Vec::with_capacity(self.buffer_size)));
+            pool.push(new_buffer)
+        } else {
+            drop(buff);
+            pool.push(buffer)
+        }
     }
 }

@@ -174,7 +174,7 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<
         let permit = semaphore.clone().acquire_owned().await?;
         tokio::spawn(async move {
             let _permit = permit;
-            let buffer = buffer_pool_arc.get_buffer().await.unwrap();
+            let buffer = buffer_pool_arc.get_buffer().await;
             match acceptor_clone {
                 None => {
                     if let Err(err) =
