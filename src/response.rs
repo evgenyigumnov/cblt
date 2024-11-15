@@ -1,4 +1,4 @@
-use crate::CbltError;
+use crate::error::CbltError;
 use async_compression::tokio::write::GzipEncoder;
 use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri};
 use log::{debug, info};

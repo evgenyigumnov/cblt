@@ -1,5 +1,5 @@
 use crate::buffer_pool::SmartVector;
-use crate::CbltError;
+use crate::error::CbltError;
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;

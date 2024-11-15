@@ -1,5 +1,6 @@
 use crate::buffer_pool::{BufferPool, SmartVector};
 use crate::config::{build_config, Directive};
+use crate::error::CbltError;
 use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, log_request_response, send_response};
 use anyhow::Context;
@@ -8,13 +9,11 @@ use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
 use reqwest::Client;
-use rustls::pki_types;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::collections::HashMap;
 use std::str;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -30,6 +29,8 @@ use tracing_subscriber::FmtSubscriber;
 mod config;
 mod request;
 mod response;
+
+mod error;
 
 mod file_server;
 mod reverse_proxy;
@@ -471,57 +472,6 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     } else {
         pattern == path
     }
-}
-
-#[derive(Error, Debug)]
-pub enum CbltError {
-    #[error("ParseRequestError: {details:?}")]
-    ParseRequestError { details: String },
-    #[error("RequestError: {details:?}")]
-    RequestError {
-        details: String,
-        status_code: StatusCode,
-    },
-    #[error("DirectiveNotMatched")]
-    DirectiveNotMatched,
-    #[error("ResponseError: {details:?}")]
-    ResponseError {
-        details: String,
-        status_code: StatusCode,
-    },
-    #[error("IOError: {source:?}")]
-    IOError {
-        #[from]
-        source: std::io::Error,
-    },
-    // from reqwest::Error
-    #[error("ReqwestError: {source:?}")]
-    ReqwestError {
-        #[from]
-        source: reqwest::Error,
-    },
-    // from AcquireError
-    #[error("AcquireError: {source:?}")]
-    AcquireError {
-        #[from]
-        source: tokio::sync::AcquireError,
-    },
-    // from rustls::Error
-    #[error("RustlsError: {source:?}")]
-    RustlsError {
-        #[from]
-        source: rustls::Error,
-    },
-    // from pki_types::pem::Error
-    #[error("PemError: {source:?}")]
-    PemError {
-        #[from]
-        source: pki_types::pem::Error,
-    },
-    #[error("AbsentKey")]
-    AbsentKey,
-    #[error("AbsentCert")]
-    AbsentCert,
 }
 
 #[derive(Debug)]
