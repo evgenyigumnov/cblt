@@ -171,12 +171,14 @@ where
 
     // Estimate capacity to reduce reallocations
     let mut resp_bytes = Vec::with_capacity(128 + body.len());
-    let status_line = format!(
+    use std::io::Write;
+    write!(
+        resp_bytes,
         "HTTP/1.1 {} {}\r\n",
         parts.status.as_u16(),
         parts.status.canonical_reason().unwrap_or("")
-    );
-    resp_bytes.extend_from_slice(status_line.as_bytes());
+    )
+    .unwrap();
 
     for (key, value) in parts.headers.iter() {
         resp_bytes.extend_from_slice(key.as_str().as_bytes());

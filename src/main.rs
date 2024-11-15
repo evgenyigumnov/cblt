@@ -58,10 +58,10 @@ pub struct Server {
 }
 
 fn main() -> anyhow::Result<()> {
-    #[cfg(debug_assertions)]
-    only_in_debug();
-    #[cfg(not(debug_assertions))]
-    only_in_production();
+    // #[cfg(debug_assertions)]
+    // only_in_debug();
+    // #[cfg(not(debug_assertions))]
+    // only_in_production();
     let num_cpus = std::thread::available_parallelism()?.get();
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
@@ -156,7 +156,9 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Cblt
     };
 
     let semaphore = Arc::new(Semaphore::new(max_connections));
-    let addr = format!("0.0.0.0:{}", server.port);
+    let port_string = server.port.to_string();
+    let port_str = port_string.as_str();
+    let addr = ["0.0.0.0:", port_str].concat();
     let listener = TcpListener::bind(addr).await?;
     let buffer_pool = Arc::new(BufferPool::new(max_connections, BUF_SIZE));
     info!("Listen port: {}", server.port);
