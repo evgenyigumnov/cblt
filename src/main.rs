@@ -7,6 +7,7 @@ use clap::Parser;
 use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
+use reqwest::Client;
 use rustls::pki_types;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -158,7 +159,9 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Cblt
     let listener = TcpListener::bind(addr).await?;
     let buffer_pool = Arc::new(BufferPool::new(max_connections, BUF_SIZE));
     info!("Listen port: {}", server.port);
+    let client_reqwest = reqwest::Client::new();
     loop {
+        let client_reqwest = client_reqwest.clone();
         let buffer_pool_arc = buffer_pool.clone();
         let acceptor_clone = acceptor.clone();
         let server_clone = server.clone();
@@ -169,16 +172,26 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Cblt
             let buffer = buffer_pool_arc.get_buffer().await;
             match acceptor_clone {
                 None => {
-                    if let Err(err) =
-                        directive_process(&mut stream, &server_clone, buffer.clone()).await
+                    if let Err(err) = directive_process(
+                        &mut stream,
+                        &server_clone,
+                        buffer.clone(),
+                        client_reqwest.clone(),
+                    )
+                    .await
                     {
                         error!("Error: {}", err);
                     }
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        if let Err(err) =
-                            directive_process(&mut stream, &server_clone, buffer.clone()).await
+                        if let Err(err) = directive_process(
+                            &mut stream,
+                            &server_clone,
+                            buffer.clone(),
+                            client_reqwest.clone(),
+                        )
+                        .await
                         {
                             error!("Error: {}", err);
                         }
@@ -199,6 +212,7 @@ async fn directive_process<S>(
     socket: &mut S,
     server: &Server,
     buffer: SmartVector,
+    client_reqwest: Client,
 ) -> Result<(), CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
@@ -324,6 +338,7 @@ where
                             req_ref,
                             pattern,
                             destination,
+                            client_reqwest.clone(),
                         )
                         .await
                         {
