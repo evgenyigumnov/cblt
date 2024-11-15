@@ -3,17 +3,18 @@ use async_compression::tokio::write::GzipEncoder;
 use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
+use std::pin;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn send_response_file(
     socket: &mut (impl AsyncWrite + Unpin),
-    response: Response<impl AsyncRead + Unpin + Debug + AsyncWrite>,
+    response: Response<impl AsyncRead + Debug + AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
-) -> Result<(), CbltError>
-{
-    let (parts, mut body) = response.into_parts();
+) -> Result<(), CbltError> {
+    let (parts, mut b) = response.into_parts();
+    let mut body = pin::pin!(b);
 
     // Write status line without allocation
     socket.write_all(b"HTTP/1.1 ").await?;
