@@ -6,14 +6,14 @@ use thiserror::Error;
 pub enum CbltError {
     #[error("ParseRequestError: {details:?}")]
     ParseRequestError { details: String },
-    #[error("RequestError: {details:?}")]
+    #[error("RequestError: {status_code:?} {details:?}")]
     RequestError {
         details: String,
         status_code: StatusCode,
     },
     #[error("DirectiveNotMatched")]
     DirectiveNotMatched,
-    #[error("ResponseError: {details:?}")]
+    #[error("ResponseError: {status_code:?} {details:?}")]
     ResponseError {
         details: String,
         status_code: StatusCode,
@@ -47,8 +47,16 @@ pub enum CbltError {
         #[from]
         source: pki_types::pem::Error,
     },
+    // from http::Error
+    #[error("HttpError: {source:?}")]
+    HttpError {
+        #[from]
+        source: http::Error,
+    },
     #[error("AbsentKey")]
     AbsentKey,
     #[error("AbsentCert")]
     AbsentCert,
+    #[error("KdlParseError: {details:?}")]
+    KdlParseError { details: String },
 }

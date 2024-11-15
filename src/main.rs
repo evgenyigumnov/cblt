@@ -366,8 +366,7 @@ where
                         let response = Response::builder()
                             .status(StatusCode::FOUND)
                             .header("Location", &dest)
-                            .body(Vec::new()) // Empty body for redirects
-                            .unwrap();
+                            .body(Vec::new())?; // Empty body for redirects?
                         match send_response(socket, response).await {
                             Ok(_) => {
                                 log_request_response::<Vec<u8>>(&request, StatusCode::FOUND);

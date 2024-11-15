@@ -40,7 +40,7 @@ where
                     response_builder = response_builder.header(key, value);
                 }
                 let mut stream = resp.bytes_stream();
-                let response = response_builder.body("").unwrap();
+                let response = response_builder.body("")?;
                 send_response_stream(socket, response, request, &mut stream).await?;
                 if status != StatusCode::OK {
                     return Err(CbltError::ResponseError {

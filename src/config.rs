@@ -1,3 +1,4 @@
+use crate::error::CbltError;
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
@@ -37,8 +38,18 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                     "root" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args.get(0).unwrap().to_string();
-                            let path = args.get(1).unwrap().to_string();
+                            let pattern = args
+                                .get(0)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "pattern absent".to_string(),
+                                })?
+                                .to_string();
+                            let path = args
+                                .get(1)
+                                .ok_or(CbltError::KdlParseError {
+                                    details: "path absent".to_string(),
+                                })?
+                                .to_string();
                             directives.push(Directive::Root { pattern, path });
                         } else {
                             anyhow::bail!("Invalid 'root' directive for host {}", hostname);

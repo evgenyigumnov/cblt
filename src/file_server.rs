@@ -33,8 +33,8 @@ where
 
                 match File::open(&file_path).await {
                     Ok(file) => {
-                        let content_length = file_size(&file).await;
-                        let response = file_response(file, content_length);
+                        let content_length = file_size(&file).await?;
+                        let response = file_response(file, content_length)?;
                         send_response_file(socket, response, request).await?;
                         return Ok(StatusCode::OK);
                     }
@@ -53,18 +53,17 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn file_size(file: &File) -> u64 {
-    let metadata = file.metadata().await.unwrap();
-    metadata.len()
+async fn file_size(file: &File) -> Result<u64, CbltError> {
+    let metadata = file.metadata().await?;
+    Ok(metadata.len())
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-fn file_response(file: File, content_length: u64) -> Response<File> {
-    Response::builder()
+fn file_response(file: File, content_length: u64) -> Result<Response<File>, CbltError> {
+    Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Length", content_length)
-        .body(file)
-        .unwrap()
+        .body(file)?)
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
