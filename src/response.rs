@@ -171,14 +171,17 @@ where
 
     // Estimate capacity to reduce reallocations
     let mut resp_bytes = Vec::with_capacity(128 + body.len());
-    use std::io::Write;
-    write!(
-        resp_bytes,
-        "HTTP/1.1 {} {}\r\n",
-        parts.status.as_u16(),
-        parts.status.canonical_reason().unwrap_or("")
-    )
-    .unwrap();
+    resp_bytes.write_all(b"HTTP/1.1 ").await?;
+
+    let mut itoa_buf = itoa::Buffer::new();
+    let status_str = itoa_buf.format(parts.status.as_u16());
+    resp_bytes.write_all(status_str.as_bytes()).await?;
+
+    resp_bytes.write_all(b" ").await?;
+    resp_bytes
+        .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
+        .await?;
+    resp_bytes.flush().await?;
 
     for (key, value) in parts.headers.iter() {
         resp_bytes.extend_from_slice(key.as_str().as_bytes());
