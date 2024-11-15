@@ -3,17 +3,15 @@ use async_compression::tokio::write::GzipEncoder;
 use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response_file<S>(
-    socket: &mut S,
-    response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite>,
+pub async fn send_response_file(
+    socket: &mut (impl AsyncWrite + Unpin),
+    response: Response<impl AsyncRead + Unpin + Debug + AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
 ) -> Result<(), CbltError>
-where
-    S: AsyncWriteExt + Unpin,
 {
     let (parts, mut body) = response.into_parts();
 

@@ -3,7 +3,7 @@ use crate::response::send_response_file;
 use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
@@ -13,7 +13,7 @@ pub async fn file_directive<S>(
     socket: &mut S,
 ) -> Result<StatusCode, CbltError>
 where
-    S: AsyncWriteExt + Unpin,
+    S: AsyncWrite + Unpin,
 {
     match root_path {
         None => {

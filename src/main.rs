@@ -425,15 +425,6 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     }
 }
 
-#[derive(Debug)]
-pub struct CBLTRequest {
-    pub host: String,
-    pub port: u16,
-    pub uri: String,
-    pub method: String,
-    pub status_code: StatusCode,
-}
-
 pub struct ParsedHost {
     pub host: String,
     pub port: Option<u16>,
