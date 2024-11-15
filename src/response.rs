@@ -8,11 +8,13 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response_file(
-    socket: &mut (impl AsyncWrite + Unpin),
+pub async fn send_response_file<S>(
+    mut socket: S,
     response: Response<impl AsyncRead + Debug + AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
-) -> Result<(), CbltError> {
+) -> Result<(), CbltError>
+where S: AsyncWriteExt + Unpin,
+{
     let (parts, mut b) = response.into_parts();
     let mut body = pin::pin!(b);
 
@@ -50,9 +52,9 @@ pub async fn send_response_file(
         debug!("Gzip supported");
         let gzip_stream = GzipEncoder::new(body);
         let mut gzip_reader = tokio::io::BufReader::new(gzip_stream);
-        tokio::io::copy(&mut gzip_reader, socket).await?;
+        tokio::io::copy(&mut gzip_reader, &mut socket).await?;
     } else {
-        tokio::io::copy(&mut body, socket).await?;
+        tokio::io::copy(&mut body, &mut socket).await?;
     }
 
     // Ensure all data is flushed
