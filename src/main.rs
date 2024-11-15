@@ -134,9 +134,9 @@ async fn server() -> anyhow::Result<()> {
             }
         });
     }
-    info!("Cblt started");
+    info!("CBLT started");
     tokio::signal::ctrl_c().await?;
-    info!("Cblt stopped");
+    info!("CBLT stopped");
 
     Ok(())
 }
