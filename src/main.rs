@@ -1,18 +1,19 @@
 use crate::buffer_pool::{BufferPool, SmartVector};
 use crate::config::{build_config, Directive};
+use crate::error::CbltError;
 use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, log_request_response, send_response};
+use anyhow::Context;
 use clap::Parser;
 use http::{Response, StatusCode};
 use kdl::KdlDocument;
 use log::{debug, error, info};
+use reqwest::Client;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::collections::HashMap;
-use std::error::Error;
 use std::str;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
@@ -28,6 +29,8 @@ use tracing_subscriber::FmtSubscriber;
 mod config;
 mod request;
 mod response;
+
+mod error;
 
 mod file_server;
 mod reverse_proxy;
@@ -54,12 +57,12 @@ pub struct Server {
     pub key: Option<String>,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]
     only_in_production();
-    let num_cpus = num_cpus::get();
+    let num_cpus = std::thread::available_parallelism()?.get();
     info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
         .worker_threads(num_cpus)
@@ -71,18 +74,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(())
     })
 }
-async fn server() -> Result<(), Box<dyn Error>> {
+async fn server() -> anyhow::Result<()> {
     let args = Args::parse();
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
-    let cbltfile_content = match fs::read_to_string(&args.cfg).await {
-        Ok(file) => file,
-        Err(_) => {
-            error!("Cbltfile not found");
-            panic!("Cbltfile not found");
-        }
-    };
+    let cbltfile_content = fs::read_to_string(&args.cfg)
+        .await
+        .context("Failed to read Cbltfile")?;
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = build_config(&doc)?;
 
@@ -99,10 +98,8 @@ async fn server() -> Result<(), Box<dyn Error>> {
                 key_path = Some(key.to_string());
             }
         });
-        if host.contains(":") {
-            let parts: Vec<&str> = host.split(":").collect();
-            port = parts[1].parse().unwrap();
-        }
+        let parsed_host = ParsedHost::from_str(&host);
+        let port = parsed_host.port.unwrap_or(port);
         debug!("Host: {}, Port: {}", host, port);
         servers
             .entry(port)
@@ -114,12 +111,8 @@ async fn server() -> Result<(), Box<dyn Error>> {
             })
             .or_insert({
                 let mut hosts = HashMap::new();
-                let host = if host.contains(":") {
-                    host.split(":").collect::<Vec<&str>>()[0]
-                } else {
-                    host.as_str()
-                };
-                hosts.insert(host.to_string(), directives.clone());
+                let host = parsed_host.host;
+                hosts.insert(host, directives.clone());
                 Server {
                     port,
                     hosts,
@@ -141,18 +134,19 @@ async fn server() -> Result<(), Box<dyn Error>> {
             }
         });
     }
-    info!("Cblt started");
+    info!("CBLT started");
     tokio::signal::ctrl_c().await?;
-    info!("Cblt stopped");
+    info!("CBLT stopped");
 
     Ok(())
 }
 
-async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<dyn Error>> {
+async fn server_task(server: &Server, max_connections: usize) -> Result<(), CbltError> {
     let acceptor = if server.cert.is_some() {
-        let certs = CertificateDer::pem_file_iter(server.cert.clone().unwrap())?
-            .collect::<Result<Vec<_>, _>>()?;
-        let key = PrivateKeyDer::from_pem_file(server.key.clone().unwrap())?;
+        let certs =
+            CertificateDer::pem_file_iter(server.cert.clone().ok_or(CbltError::AbsentCert)?)?
+                .collect::<Result<Vec<_>, _>>()?;
+        let key = PrivateKeyDer::from_pem_file(server.key.clone().ok_or(CbltError::AbsentKey)?)?;
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)?;
@@ -166,7 +160,9 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<
     let listener = TcpListener::bind(addr).await?;
     let buffer_pool = Arc::new(BufferPool::new(max_connections, BUF_SIZE));
     info!("Listen port: {}", server.port);
+    let client_reqwest = reqwest::Client::new();
     loop {
+        let client_reqwest = client_reqwest.clone();
         let buffer_pool_arc = buffer_pool.clone();
         let acceptor_clone = acceptor.clone();
         let server_clone = server.clone();
@@ -177,16 +173,26 @@ async fn server_task(server: &Server, max_connections: usize) -> Result<(), Box<
             let buffer = buffer_pool_arc.get_buffer().await;
             match acceptor_clone {
                 None => {
-                    if let Err(err) =
-                        directive_process(&mut stream, &server_clone, buffer.clone()).await
+                    if let Err(err) = directive_process(
+                        &mut stream,
+                        &server_clone,
+                        buffer.clone(),
+                        client_reqwest.clone(),
+                    )
+                    .await
                     {
                         error!("Error: {}", err);
                     }
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        if let Err(err) =
-                            directive_process(&mut stream, &server_clone, buffer.clone()).await
+                        if let Err(err) = directive_process(
+                            &mut stream,
+                            &server_clone,
+                            buffer.clone(),
+                            client_reqwest.clone(),
+                        )
+                        .await
                         {
                             error!("Error: {}", err);
                         }
@@ -207,7 +213,8 @@ async fn directive_process<S>(
     socket: &mut S,
     server: &Server,
     buffer: SmartVector,
-) -> Result<(), CBLTError>
+    client_reqwest: Client,
+) -> Result<(), CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -222,12 +229,11 @@ where
                     return Err(err);
                 }
             }
-            return Err(CBLTError::ParseRequestError {
+            return Err(CbltError::ParseRequestError {
                 details: "Parse request error".to_string(),
             });
         }
         Ok(request) => {
-            let req_ref = &request;
             let host = match request.headers().get("Host") {
                 Some(h) => h.to_str().unwrap_or(""),
                 None => "",
@@ -242,7 +248,7 @@ where
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
                             let _ = send_response(socket, response).await;
-                            return Err(CBLTError::ResponseError {
+                            return Err(CbltError::ResponseError {
                                 details: "Forbidden".to_string(),
                                 status_code: StatusCode::FORBIDDEN,
                             });
@@ -267,51 +273,36 @@ where
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
                         debug!("File server");
-                        let ret =
-                            file_server::file_directive(root_path, &request, socket, req_ref).await;
+                        let ret = file_server::file_directive(root_path, &request, socket).await;
                         match ret {
                             Ok(_) => {
-                                log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
-                                    StatusCode::OK,
-                                );
+                                log_request_response::<Vec<u8>>(&request, StatusCode::OK);
                                 return Ok(());
                             }
                             Err(error) => match error {
-                                CBLTError::ResponseError {
+                                CbltError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
                                     let response = error_response(status_code);
                                     match send_response(socket, response).await {
                                         Ok(()) => {
-                                            log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
-                                                status_code,
-                                            );
+                                            log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
                                         }
                                         Err(err) => {
                                             log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
+                                                &request,
                                                 StatusCode::INTERNAL_SERVER_ERROR,
                                             );
                                             return Err(err);
                                         }
                                     }
                                 }
-                                CBLTError::DirectiveNotMatched => {}
+                                CbltError::DirectiveNotMatched => {}
                                 err => {
                                     log_request_response::<Vec<u8>>(
-                                        req_ref.method(),
-                                        req_ref.uri(),
-                                        req_ref.headers(),
+                                        &request,
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                     );
                                     return Err(err);
@@ -329,55 +320,40 @@ where
                         match reverse_proxy::proxy_directive(
                             &request,
                             socket,
-                            req_ref,
                             pattern,
                             destination,
+                            client_reqwest.clone(),
                         )
                         .await
                         {
                             Ok(status) => {
-                                log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
-                                    status,
-                                );
+                                log_request_response::<Vec<u8>>(&request, status);
                                 return Ok(());
                             }
                             Err(err) => match err {
-                                CBLTError::DirectiveNotMatched => {}
-                                CBLTError::ResponseError {
+                                CbltError::DirectiveNotMatched => {}
+                                CbltError::ResponseError {
                                     details: _,
                                     status_code,
                                 } => {
                                     let response = error_response(status_code);
                                     match send_response(socket, response).await {
                                         Ok(()) => {
-                                            log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
-                                                status_code,
-                                            );
+                                            log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
                                         }
                                         Err(err) => {
                                             log_request_response::<Vec<u8>>(
-                                                req_ref.method(),
-                                                req_ref.uri(),
-                                                req_ref.headers(),
+                                                &request,
                                                 StatusCode::INTERNAL_SERVER_ERROR,
                                             );
                                             return Err(err);
                                         }
                                     }
-                                    return Ok(());
                                 }
                                 other => {
                                     log_request_response::<Vec<u8>>(
-                                        req_ref.method(),
-                                        req_ref.uri(),
-                                        req_ref.headers(),
+                                        &request,
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                     );
                                     return Err(other);
@@ -390,23 +366,15 @@ where
                         let response = Response::builder()
                             .status(StatusCode::FOUND)
                             .header("Location", &dest)
-                            .body(Vec::new()) // Empty body for redirects
-                            .unwrap();
+                            .body(Vec::new())?; // Empty body for redirects?
                         match send_response(socket, response).await {
                             Ok(_) => {
-                                log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
-                                    StatusCode::FOUND,
-                                );
+                                log_request_response::<Vec<u8>>(&request, StatusCode::FOUND);
                                 return Ok(());
                             }
                             Err(err) => {
                                 log_request_response::<Vec<u8>>(
-                                    req_ref.method(),
-                                    req_ref.uri(),
-                                    req_ref.headers(),
+                                    &request,
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                 );
                                 return Err(err);
@@ -419,20 +387,10 @@ where
 
             let response = error_response(StatusCode::NOT_FOUND);
             if let Err(err) = send_response(socket, response).await {
-                log_request_response::<Vec<u8>>(
-                    req_ref.method(),
-                    req_ref.uri(),
-                    req_ref.headers(),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                );
+                log_request_response::<Vec<u8>>(&request, StatusCode::INTERNAL_SERVER_ERROR);
                 return Err(err);
             }
-            log_request_response::<Vec<u8>>(
-                req_ref.method(),
-                req_ref.uri(),
-                req_ref.headers(),
-                StatusCode::NOT_FOUND,
-            );
+            log_request_response::<Vec<u8>>(&request, StatusCode::NOT_FOUND);
             Ok(())
         }
     }
@@ -467,35 +425,6 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum CBLTError {
-    #[error("ParseRequestError: {details:?}")]
-    ParseRequestError { details: String },
-    #[error("RequestError: {details:?}")]
-    RequestError {
-        details: String,
-        status_code: StatusCode,
-    },
-    #[error("DirectiveNotMatched")]
-    DirectiveNotMatched,
-    #[error("ResponseError: {details:?}")]
-    ResponseError {
-        details: String,
-        status_code: StatusCode,
-    },
-    #[error("IOError: {source:?}")]
-    IOError {
-        #[from]
-        source: std::io::Error,
-    },
-    // from reqwest::Error
-    #[error("ReqwestError: {source:?}")]
-    ReqwestError {
-        #[from]
-        source: reqwest::Error,
-    },
-}
-
 #[derive(Debug)]
 pub struct CBLTRequest {
     pub host: String,
@@ -503,4 +432,26 @@ pub struct CBLTRequest {
     pub uri: String,
     pub method: String,
     pub status_code: StatusCode,
+}
+
+pub struct ParsedHost {
+    pub host: String,
+    pub port: Option<u16>,
+}
+
+impl ParsedHost {
+    fn from_str(host_str: &str) -> Self {
+        if let Some((host_part, port_part)) = host_str.split_once(':') {
+            let port = port_part.parse().ok();
+            ParsedHost {
+                host: host_part.to_string(),
+                port,
+            }
+        } else {
+            ParsedHost {
+                host: host_str.to_string(),
+                port: None,
+            }
+        }
+    }
 }

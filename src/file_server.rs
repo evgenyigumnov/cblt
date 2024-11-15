@@ -1,5 +1,5 @@
+use crate::error::CbltError;
 use crate::response::send_response_file;
-use crate::CBLTError;
 use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
@@ -11,14 +11,13 @@ pub async fn file_directive<S>(
     root_path: Option<&str>,
     request: &Request<Vec<u8>>,
     socket: &mut S,
-    req_opt: &Request<Vec<u8>>,
-) -> Result<StatusCode, CBLTError>
+) -> Result<StatusCode, CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
     match root_path {
         None => {
-            return Err(CBLTError::ResponseError {
+            return Err(CbltError::ResponseError {
                 details: "".to_string(),
                 status_code: StatusCode::INTERNAL_SERVER_ERROR,
             });
@@ -34,38 +33,37 @@ where
 
                 match File::open(&file_path).await {
                     Ok(file) => {
-                        let content_length = file_size(&file).await;
-                        let response = file_response(file, content_length);
-                        send_response_file(socket, response, req_opt).await?;
+                        let content_length = file_size(&file).await?;
+                        let response = file_response(file, content_length)?;
+                        send_response_file(socket, response, request).await?;
                         return Ok(StatusCode::OK);
                     }
                     Err(_) => {
-                        return Err(CBLTError::ResponseError {
+                        return Err(CbltError::ResponseError {
                             details: "Not found".to_string(),
                             status_code: StatusCode::NOT_FOUND,
                         });
                     }
                 }
             } else {
-                return Err(CBLTError::DirectiveNotMatched);
+                return Err(CbltError::DirectiveNotMatched);
             }
         }
     }
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-async fn file_size(file: &File) -> u64 {
-    let metadata = file.metadata().await.unwrap();
-    metadata.len()
+async fn file_size(file: &File) -> Result<u64, CbltError> {
+    let metadata = file.metadata().await?;
+    Ok(metadata.len())
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-fn file_response(file: File, content_length: u64) -> Response<File> {
-    Response::builder()
+fn file_response(file: File, content_length: u64) -> Result<Response<File>, CbltError> {
+    Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Length", content_length)
-        .body(file)
-        .unwrap()
+        .body(file)?)
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]

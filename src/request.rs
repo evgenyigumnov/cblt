@@ -1,5 +1,5 @@
 use crate::buffer_pool::SmartVector;
-use crate::CBLTError;
+use crate::error::CbltError;
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;
@@ -15,7 +15,7 @@ pub const HEADER_BUF_SIZE: usize = 32;
 pub async fn socket_to_request<S>(
     socket: &mut S,
     buffer: SmartVector,
-) -> Result<Request<Vec<u8>>, CBLTError>
+) -> Result<Request<Vec<u8>>, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -38,7 +38,7 @@ where
                 let req_str = match str::from_utf8(&buf[..header_len]) {
                     Ok(v) => v,
                     Err(_) => {
-                        return Err(CBLTError::RequestError {
+                        return Err(CbltError::RequestError {
                             details: "Bad request".to_string(),
                             status_code: StatusCode::BAD_REQUEST,
                         });
@@ -49,7 +49,7 @@ where
                 let (mut request, content_length) = match parse_request_headers(req_str) {
                     Some((req, content_length)) => (req, content_length),
                     None => {
-                        return Err(CBLTError::RequestError {
+                        return Err(CbltError::RequestError {
                             details: "Bad request".to_string(),
                             status_code: StatusCode::BAD_REQUEST,
                         });
@@ -78,7 +78,7 @@ where
                 continue;
             }
             Err(_) => {
-                return Err(CBLTError::RequestError {
+                return Err(CbltError::RequestError {
                     details: "Bad request".to_string(),
                     status_code: StatusCode::BAD_REQUEST,
                 });
@@ -86,7 +86,7 @@ where
         }
     }
 
-    return Err(CBLTError::ResponseError {
+    return Err(CbltError::ResponseError {
         details: "Bad request".to_string(),
         status_code: StatusCode::BAD_REQUEST,
     });

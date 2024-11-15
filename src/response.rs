@@ -1,6 +1,6 @@
-use crate::CBLTError;
+use crate::error::CbltError;
 use async_compression::tokio::write::GzipEncoder;
-use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Uri};
+use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -11,7 +11,7 @@ pub async fn send_response_file<S>(
     socket: &mut S,
     response: Response<impl AsyncReadExt + Unpin + Debug + tokio::io::AsyncWrite>,
     req_opt: &Request<Vec<u8>>,
-) -> Result<(), CBLTError>
+) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
@@ -80,7 +80,7 @@ pub async fn send_response_stream<S, T>(
     response: Response<&str>,
     req_opt: &Request<Vec<u8>>,
     stream: &mut T,
-) -> Result<(), CBLTError>
+) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
     T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
@@ -142,12 +142,11 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn log_request_response<T>(
-    method: &Method,
-    uri: &Uri,
-    headers: &HeaderMap<HeaderValue>,
-    status_code: StatusCode,
-) {
+pub fn log_request_response<T>(request: &Request<Vec<u8>>, status_code: StatusCode) {
+    let method = &request.method();
+    let uri = request.uri();
+    let headers = request.headers();
+
     let host_header = headers
         .get("Host")
         .map_or("-", |v| v.to_str().unwrap_or("-"));
@@ -162,7 +161,7 @@ pub fn log_request_response<T>(
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CBLTError>
+pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {

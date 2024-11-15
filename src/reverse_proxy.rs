@@ -1,7 +1,8 @@
 use crate::response::send_response_stream;
-use crate::{matches_pattern, CBLTError};
+use crate::{matches_pattern, CbltError};
 use http::{Request, Response, StatusCode};
 use log::debug;
+use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
 
@@ -9,10 +10,10 @@ use tracing::instrument;
 pub async fn proxy_directive<S>(
     request: &Request<Vec<u8>>,
     socket: &mut S,
-    req_ref: &Request<Vec<u8>>,
-    pattern: &String,
-    destination: &String,
-) -> Result<StatusCode, CBLTError>
+    pattern: &str,
+    destination: &str,
+    client_reqwest: Client,
+) -> Result<StatusCode, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
@@ -20,8 +21,7 @@ where
         let dest_uri = format!("{}{}", destination, request.uri().path());
         #[cfg(debug_assertions)]
         debug!("Destination URI: {}", dest_uri);
-        let client = reqwest::Client::new();
-        let mut req_builder = client.request(request.method().clone(), &dest_uri);
+        let mut req_builder = client_reqwest.request(request.method().clone(), &dest_uri);
 
         for (key, value) in request.headers().iter() {
             req_builder = req_builder.header(key, value);
@@ -40,10 +40,10 @@ where
                     response_builder = response_builder.header(key, value);
                 }
                 let mut stream = resp.bytes_stream();
-                let response = response_builder.body("").unwrap();
-                send_response_stream(socket, response, req_ref, &mut stream).await?;
+                let response = response_builder.body("")?;
+                send_response_stream(socket, response, request, &mut stream).await?;
                 if status != StatusCode::OK {
-                    return Err(CBLTError::ResponseError {
+                    return Err(CbltError::ResponseError {
                         details: "Bad gateway".to_string(),
                         status_code: status,
                     });
@@ -52,13 +52,13 @@ where
                 }
             }
             Err(_) => {
-                return Err(CBLTError::ResponseError {
+                return Err(CbltError::ResponseError {
                     details: "Bad gateway".to_string(),
                     status_code: StatusCode::BAD_GATEWAY,
                 });
             }
         }
     } else {
-        return Err(CBLTError::DirectiveNotMatched);
+        return Err(CbltError::DirectiveNotMatched);
     }
 }
