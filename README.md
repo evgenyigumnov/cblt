@@ -16,6 +16,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - TLS support
 - Gzip compression
 - Redirects
+- Reload configuration without downtime
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
@@ -97,4 +98,24 @@ I would love to see contributions from the community. If you experience bugs, fe
 1. Do fork
 2. Do some changes
 3. Create pull request
+
+
+## Development
+
+### Increase stack size for development launch
+
+**Linux:**
+```bash
+RUSTFLAGS="-C link-args=/STACK:8388608" cargo run
+```
+
+**Windows(cmd):**
+```cmd
+set RUSTFLAGS=-C link-args=/STACK:8388608 && cargo run
+```
+
+**Windows PowerShell:**
+```powershell
+$env:RUSTFLAGS="-C link-args=/STACK:8388608"; cargo run
+```
 

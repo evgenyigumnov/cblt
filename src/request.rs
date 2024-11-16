@@ -6,6 +6,7 @@ use httparse::Status;
 use log::debug;
 use std::str;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::MutexGuard;
 use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;
@@ -46,30 +47,17 @@ where
                 };
 
                 // Parse the request headers and get Content-Length
-                let (mut request, content_length) = match parse_request_headers(req_str) {
-                    Some((req, content_length)) => (req, content_length),
-                    None => {
-                        return Err(CbltError::RequestError {
-                            details: "Bad request".to_string(),
-                            status_code: StatusCode::BAD_REQUEST,
-                        });
-                    }
-                };
-
-                if let Some(content_length) = content_length {
-                    let mut body = buf[header_len..].to_vec();
-                    let mut temp_buf = vec![0; content_length - body.len()];
-
-                    while body.len() < content_length {
-                        let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
-                        if bytes_read == 0 {
-                            break;
+                let (request, _) =
+                    match parse_request_headers(req_str, header_len, &buf, socket).await {
+                        Some((req, content_length)) => (req, content_length),
+                        None => {
+                            return Err(CbltError::RequestError {
+                                details: "Bad request".to_string(),
+                                status_code: StatusCode::BAD_REQUEST,
+                            });
                         }
-                        body.extend_from_slice(&temp_buf[..bytes_read]);
-                    }
+                    };
 
-                    *request.body_mut() = body;
-                }
                 #[cfg(debug_assertions)]
                 debug!("{:?}", request);
                 return Ok(request);
@@ -94,7 +82,15 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn parse_request_headers(req_str: &str) -> Option<(Request<Vec<u8>>, Option<usize>)> {
+pub async fn parse_request_headers<S>(
+    req_str: &str,
+    header_len: usize,
+    buf: &MutexGuard<'_, Vec<u8>>,
+    socket: &mut S,
+) -> Option<(Request<Vec<u8>>, Option<usize>)>
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
+{
     let mut headers = [httparse::EMPTY_HEADER; 32];
     let mut req = httparse::Request::new(&mut headers);
 
@@ -110,7 +106,7 @@ pub fn parse_request_headers(req_str: &str) -> Option<(Request<Vec<u8>>, Option<
 
             let mut builder = Request::builder().method(method).uri(path).version(version);
 
-            let mut content_length = None;
+            let mut content_length_opt = None;
 
             for header in req.headers.iter() {
                 let name = header.name;
@@ -120,16 +116,31 @@ pub fn parse_request_headers(req_str: &str) -> Option<(Request<Vec<u8>>, Option<
                 if name.eq_ignore_ascii_case("Content-Length") {
                     if let Ok(s) = std::str::from_utf8(value) {
                         if let Ok(len) = s.trim().parse::<usize>() {
-                            content_length = Some(len);
+                            content_length_opt = Some(len);
                         }
                     }
                 }
             }
 
-            builder
-                .body(Vec::new())
-                .ok()
-                .map(|req| (req, content_length))
+            if let Some(content_length) = content_length_opt {
+                let mut body = buf[header_len..].to_vec();
+                let mut temp_buf = vec![0; content_length - body.len()];
+
+                while body.len() < content_length {
+                    let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    body.extend_from_slice(&temp_buf[..bytes_read]);
+                }
+
+                builder.body(body).ok().map(|req| (req, content_length_opt))
+            } else {
+                builder
+                    .body(Vec::new())
+                    .ok()
+                    .map(|req| (req, content_length_opt))
+            }
         }
         Ok(Status::Partial) => None, // Incomplete request
         Err(_) => None,              // Parsing failed

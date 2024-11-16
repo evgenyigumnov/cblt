@@ -3,8 +3,8 @@ use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::socket_to_request;
 use crate::response::{error_response, log_request_response, send_response};
-use crate::server::Server;
 use crate::{file_server, matches_pattern, reverse_proxy};
+use heapless::FnvIndexMap;
 use http::{Response, StatusCode};
 use log::{debug, info};
 use reqwest::Client;
@@ -14,7 +14,7 @@ use tracing::instrument;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn directive_process<S>(
     socket: &mut S,
-    server: &Server,
+    hosts: &FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
     buffer: SmartVector,
     client_reqwest: Client,
 ) -> Result<(), CbltError>
@@ -24,7 +24,7 @@ where
     match socket_to_request(socket, buffer).await {
         Err(_) => {
             let response = error_response(StatusCode::BAD_REQUEST);
-            let ret = send_response(socket, response).await;
+            let ret = send_response(socket, response?).await;
             match ret {
                 Ok(()) => {}
                 Err(err) => {
@@ -43,14 +43,16 @@ where
             };
 
             // find host starting with "*"
-            let cfg_opt = server.hosts.iter().find(|(k, _)| k.starts_with("*"));
+            let cfg_opt = hosts.iter().find(|(k, _)| k.starts_with("*"));
             let host_config = match cfg_opt {
                 None => {
-                    let host_config = match server.hosts.get(host) {
+                    let host_str: heapless::String<200> = heapless::String::try_from(host)
+                        .map_err(|_| CbltError::HeapLessError {})?;
+                    let host_config = match hosts.get(&host_str) {
                         Some(cfg) => cfg,
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
-                            let _ = send_response(socket, response).await;
+                            let _ = send_response(socket, response?).await;
                             return Err(CbltError::ResponseError {
                                 details: "Forbidden".to_string(),
                                 status_code: StatusCode::FORBIDDEN,
@@ -88,7 +90,7 @@ where
                                     status_code,
                                 } => {
                                     let response = error_response(status_code);
-                                    match send_response(socket, response).await {
+                                    match send_response(socket, response?).await {
                                         Ok(()) => {
                                             log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
@@ -140,7 +142,7 @@ where
                                     status_code,
                                 } => {
                                     let response = error_response(status_code);
-                                    match send_response(socket, response).await {
+                                    match send_response(socket, response?).await {
                                         Ok(()) => {
                                             log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
@@ -184,12 +186,12 @@ where
                             }
                         }
                     }
-                    Directive::Tls { .. } => {}
+                    Directive::TlS { .. } => {}
                 }
             }
 
             let response = error_response(StatusCode::NOT_FOUND);
-            if let Err(err) = send_response(socket, response).await {
+            if let Err(err) = send_response(socket, response?).await {
                 log_request_response::<Vec<u8>>(&request, StatusCode::INTERNAL_SERVER_ERROR);
                 return Err(err);
             }

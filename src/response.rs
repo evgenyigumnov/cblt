@@ -199,7 +199,7 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn error_response(status: StatusCode) -> Response<Vec<u8>> {
+pub fn error_response(status: StatusCode) -> Result<Response<Vec<u8>>, CbltError> {
     let msg = match status {
         StatusCode::BAD_REQUEST => "Bad request",
         StatusCode::FORBIDDEN => "Forbidden",
@@ -207,8 +207,7 @@ pub fn error_response(status: StatusCode) -> Response<Vec<u8>> {
         _ => "Unknown error",
     };
 
-    Response::builder()
+    Ok(Response::builder()
         .status(status)
-        .body(msg.as_bytes().to_vec())
-        .unwrap()
+        .body(msg.as_bytes().to_vec())?)
 }

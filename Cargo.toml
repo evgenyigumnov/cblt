@@ -39,6 +39,8 @@ futures-util = "0.3.31"
 async-compression = { version = "0.4.17", features = ["tokio", "gzip"] }
 thiserror = "2.0.3"
 anyhow = "1.0.93"
+heapless = "0.8.0"
 
 [profile.release]
 lto = true
+

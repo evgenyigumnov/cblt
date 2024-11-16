@@ -6,24 +6,24 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub enum Directive {
     Root {
-        pattern: String,
-        path: String,
+        pattern: heapless::String<200>,
+        path: heapless::String<200>,
     },
     FileServer,
     ReverseProxy {
-        pattern: String,
-        destination: String,
+        pattern: heapless::String<200>,
+        destination: heapless::String<200>,
     },
     Redir {
-        destination: String,
+        destination: heapless::String<200>,
     },
-    Tls {
-        cert: String,
-        key: String,
+    TlS {
+        cert: heapless::String<200>,
+        key: heapless::String<200>,
     },
 }
 
-pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Directive>>> {
+pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, CbltError> {
     let mut hosts = HashMap::new();
 
     for node in doc.nodes() {
@@ -50,9 +50,16 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                     details: "path absent".to_string(),
                                 })?
                                 .to_string();
-                            directives.push(Directive::Root { pattern, path });
+                            directives.push(Directive::Root {
+                                pattern: heapless::String::try_from(pattern.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                path: heapless::String::try_from(path.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                            });
                         } else {
-                            anyhow::bail!("Invalid 'root' directive for host {}", hostname);
+                            return Err(CbltError::KdlParseError {
+                                details: format!("Invalid 'root' directive for host {}", hostname),
+                            });
                         }
                     }
                     "file_server" => {
@@ -74,14 +81,18 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                 })?
                                 .to_string();
                             directives.push(Directive::ReverseProxy {
-                                pattern,
-                                destination,
+                                pattern: heapless::String::try_from(pattern.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                destination: heapless::String::try_from(destination.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
                             });
                         } else {
-                            anyhow::bail!(
-                                "Invalid 'reverse_proxy' directive for host {}",
-                                hostname
-                            );
+                            return Err(CbltError::KdlParseError {
+                                details: format!(
+                                    "Invalid 'reverse_proxy' directive for host {}",
+                                    hostname
+                                ),
+                            });
                         }
                     }
                     "redir" => {
@@ -93,9 +104,14 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                     details: "destination absent".to_string(),
                                 })?
                                 .to_string();
-                            directives.push(Directive::Redir { destination });
+                            directives.push(Directive::Redir {
+                                destination: heapless::String::try_from(destination.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                            });
                         } else {
-                            anyhow::bail!("Invalid 'redir' directive for host {}", hostname);
+                            return Err(CbltError::KdlParseError {
+                                details: format!("Invalid 'redir' directive for host {}", hostname),
+                            });
                         }
                     }
                     "tls" => {
@@ -113,27 +129,40 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                     details: "key path absent".to_string(),
                                 })?
                                 .to_string();
-                            directives.push(Directive::Tls {
-                                cert: cert_path,
-                                key: key_path,
+                            directives.push(Directive::TlS {
+                                cert: heapless::String::try_from(cert_path.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                key: heapless::String::try_from(key_path.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
                             });
                         } else {
-                            anyhow::bail!("Invalid 'tls' directive for host {}", hostname);
+                            return Err(CbltError::KdlParseError {
+                                details: format!("Invalid 'tls' directive for host {}", hostname),
+                            });
                         }
                     }
                     _ => {
-                        anyhow::bail!("Unknown directive '{}' for host {}", child_name, hostname);
+                        return Err(CbltError::KdlParseError {
+                            details: format!(
+                                "Unknown directive '{}' for host {}",
+                                child_name, hostname
+                            ),
+                        });
                     }
                 }
             }
         }
 
         if directives.is_empty() {
-            anyhow::bail!("No directives specified for host {}", hostname);
+            return Err(CbltError::KdlParseError {
+                details: format!("No directives specified for host {}", hostname),
+            });
         }
 
         if hosts.contains_key(&hostname) {
-            anyhow::bail!("Host '{}' already exists", hostname);
+            return Err(CbltError::KdlParseError {
+                details: format!("Host '{}' already exists", hostname),
+            });
         }
         hosts.insert(hostname, directives);
     }
