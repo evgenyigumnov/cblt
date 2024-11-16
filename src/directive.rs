@@ -24,7 +24,7 @@ where
     match socket_to_request(socket, buffer).await {
         Err(_) => {
             let response = error_response(StatusCode::BAD_REQUEST);
-            let ret = send_response(socket, response).await;
+            let ret = send_response(socket, response?).await;
             match ret {
                 Ok(()) => {}
                 Err(err) => {
@@ -52,7 +52,7 @@ where
                         Some(cfg) => cfg,
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
-                            let _ = send_response(socket, response).await;
+                            let _ = send_response(socket, response?).await;
                             return Err(CbltError::ResponseError {
                                 details: "Forbidden".to_string(),
                                 status_code: StatusCode::FORBIDDEN,
@@ -90,7 +90,7 @@ where
                                     status_code,
                                 } => {
                                     let response = error_response(status_code);
-                                    match send_response(socket, response).await {
+                                    match send_response(socket, response?).await {
                                         Ok(()) => {
                                             log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
@@ -142,7 +142,7 @@ where
                                     status_code,
                                 } => {
                                     let response = error_response(status_code);
-                                    match send_response(socket, response).await {
+                                    match send_response(socket, response?).await {
                                         Ok(()) => {
                                             log_request_response::<Vec<u8>>(&request, status_code);
                                             return Ok(());
@@ -191,7 +191,7 @@ where
             }
 
             let response = error_response(StatusCode::NOT_FOUND);
-            if let Err(err) = send_response(socket, response).await {
+            if let Err(err) = send_response(socket, response?).await {
                 log_request_response::<Vec<u8>>(&request, StatusCode::INTERNAL_SERVER_ERROR);
                 return Err(err);
             }
