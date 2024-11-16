@@ -1,7 +1,6 @@
 use crate::config::{build_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
-use anyhow::Context;
 use clap::Parser;
 use heapless::FnvIndexMap;
 use kdl::KdlDocument;
@@ -10,8 +9,10 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::Path;
 use std::str;
+use std::sync::Arc;
 use tokio::fs;
 use tokio::runtime::Builder;
+use tokio::sync::Mutex;
 use tracing::instrument;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -65,7 +66,7 @@ fn main() -> anyhow::Result<()> {
     })
 }
 async fn server(num_cpus: usize) -> anyhow::Result<()> {
-    let args = Args::parse();
+    let args = Arc::new(Args::parse());
 
     if args.reload {
         let reload_file_path = Path::new("reload");
@@ -73,7 +74,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
             anyhow::bail!("File 'reload' already exists");
         } else {
             std::fs::File::create(reload_file_path)?;
-            info!("Reload 'Cbltfile' inicated");
+            info!("Reloading 'Cbltfile'  has been initiated");
         }
         return Ok(());
     }
@@ -82,12 +83,80 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
-    let cbltfile_content = fs::read_to_string(&args.cfg)
-        .await
-        .context("Failed to read Cbltfile")?;
+    let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
+
+    debug!("{:#?}", servers);
+    let server_workers: Arc<Mutex<HashMap<u16, ServerWorker>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
+    process_workers(args.clone(), server_workers.clone(), servers.clone()).await?;
+
+    tokio::spawn(async move {
+        let reload_file_path = Path::new("reload");
+
+        loop {
+            if reload_file_path.exists() {
+                let servers = load_servers_from_config(args.clone()).await.unwrap();
+                if let Err(err) =
+                    process_workers(args.clone(), server_workers.clone(), servers).await
+                {
+                    error!("Error: {}", err);
+                }
+                std::fs::remove_file(reload_file_path).unwrap();
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+    });
+
+    info!("CBLT started");
+    tokio::signal::ctrl_c().await?;
+    info!("CBLT stopped");
+
+    Ok(())
+}
+
+async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
+    let cbltfile_content = fs::read_to_string(&args.cfg).await?;
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = build_config(&doc)?;
 
+    Ok(build_servers(config)?)
+}
+
+async fn process_workers(
+    args: Arc<Args>,
+    workers: Arc<Mutex<HashMap<u16, ServerWorker>>>,
+    servers: HashMap<u16, Server>,
+) -> Result<(), CbltError> {
+    for (port, server) in servers {
+        if let Some(worker) = workers.lock().await.get(&port) {
+            worker.update(server.hosts, server.cert, server.key).await?;
+            info!("Server worker updated on port: {}", port);
+        } else {
+            let server_workers = workers.clone();
+            let args = args.clone();
+            tokio::spawn(async move {
+                if let Ok(server_worker) = ServerWorker::new(server.clone()) {
+                    server_workers
+                        .lock()
+                        .await
+                        .insert(port, server_worker.clone());
+                    if let Err(err) = server_worker.run(args.max_connections).await {
+                        error!("Error: {}", err);
+                    }
+                } else {
+                    error!("Error creating server worker");
+                }
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn build_servers(
+    config: HashMap<String, Vec<Directive>>,
+) -> Result<HashMap<u16, Server>, CbltError> {
     let mut servers: HashMap<u16, Server> = HashMap::new(); // Port -> Server
 
     for (host, directives) in config {
@@ -158,25 +227,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
             }
         }
     }
-
-    debug!("{:#?}", servers);
-
-    for (_, server) in servers {
-        tokio::spawn(async move {
-            if let Ok(server_worker) = ServerWorker::new(server.clone()) {
-                if let Err(err) = server_worker.run(max_connections).await {
-                    error!("Error: {}", err);
-                }
-            } else {
-                error!("Error creating server worker");
-            }
-        });
-    }
-    info!("CBLT started");
-    tokio::signal::ctrl_c().await?;
-    info!("CBLT stopped");
-
-    Ok(())
+    Ok(servers)
 }
 
 #[allow(dead_code)]

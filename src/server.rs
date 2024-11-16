@@ -26,8 +26,8 @@ pub struct ServerWorker {
 }
 
 pub struct ServerSettings {
-    hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
-    tls_acceptor: Option<Arc<TlsAcceptor>>,
+    pub hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
+    pub tls_acceptor: Option<Arc<TlsAcceptor>>,
 }
 
 fn tls_acceptor_bulder(
@@ -120,10 +120,12 @@ impl ServerWorker {
     pub async fn update(
         &self,
         hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
-        cert_path: Option<&str>,
-        key_path: Option<&str>,
+        cert_path: Option<heapless::String<200>>,
+        key_path: Option<heapless::String<200>>,
     ) -> Result<(), CbltError> {
-        let tls_acceptor = tls_acceptor_bulder(cert_path, key_path)?;
+        let cert_path_opt = cert_path.as_deref();
+        let key_path_opt = key_path.as_deref();
+        let tls_acceptor = tls_acceptor_bulder(cert_path_opt, key_path_opt)?;
 
         let mut settings = self.settings.write().await;
         settings.hosts = hosts;

@@ -59,9 +59,14 @@ pub enum CbltError {
         #[from]
         source: http::header::ToStrError,
     },
+    // from KdlError
+    #[error("KdlError: {source:?}")]
+    KdlError {
+        #[from]
+        source: kdl::KdlError,
+    },
     #[error("KdlParseError: {details:?}")]
     KdlParseError { details: String },
-
     #[error("HeapLessError")]
     HeapLessError,
 }
