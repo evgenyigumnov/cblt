@@ -47,15 +47,16 @@ where
                 };
 
                 // Parse the request headers and get Content-Length
-                let (mut request, content_length) = match parse_request_headers(req_str, header_len, &buf, socket).await {
-                    Some((req, content_length)) => (req, content_length),
-                    None => {
-                        return Err(CbltError::RequestError {
-                            details: "Bad request".to_string(),
-                            status_code: StatusCode::BAD_REQUEST,
-                        });
-                    }
-                };
+                let (request, _) =
+                    match parse_request_headers(req_str, header_len, &buf, socket).await {
+                        Some((req, content_length)) => (req, content_length),
+                        None => {
+                            return Err(CbltError::RequestError {
+                                details: "Bad request".to_string(),
+                                status_code: StatusCode::BAD_REQUEST,
+                            });
+                        }
+                    };
 
                 #[cfg(debug_assertions)]
                 debug!("{:?}", request);
@@ -81,8 +82,14 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn parse_request_headers<S>(req_str: &str, header_len: usize, buf: &MutexGuard<'_, Vec<u8>>, socket: &mut S) -> Option<(Request<Vec<u8>>, Option<usize>)>
-where S: AsyncReadExt + AsyncWriteExt + Unpin,
+pub async fn parse_request_headers<S>(
+    req_str: &str,
+    header_len: usize,
+    buf: &MutexGuard<'_, Vec<u8>>,
+    socket: &mut S,
+) -> Option<(Request<Vec<u8>>, Option<usize>)>
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let mut headers = [httparse::EMPTY_HEADER; 32];
     let mut req = httparse::Request::new(&mut headers);
@@ -127,19 +134,13 @@ where S: AsyncReadExt + AsyncWriteExt + Unpin,
                     body.extend_from_slice(&temp_buf[..bytes_read]);
                 }
 
-                builder
-                    .body(body)
-                    .ok()
-                    .map(|req| (req, content_length_opt))
+                builder.body(body).ok().map(|req| (req, content_length_opt))
             } else {
                 builder
                     .body(Vec::new())
                     .ok()
                     .map(|req| (req, content_length_opt))
             }
-
-
-
         }
         Ok(Status::Partial) => None, // Incomplete request
         Err(_) => None,              // Parsing failed
@@ -164,7 +165,7 @@ Content-Type: application/json\r\n\
 Content-Length: 15\r\n\r\n\
 {\"key\":\"value\"}";
 
-        let req = parse_request_headers(request_str, );
+        let req = parse_request_headers(request_str);
         println!("{:#?}", req);
 
         Ok(())
