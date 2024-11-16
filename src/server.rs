@@ -16,7 +16,7 @@ use tokio_rustls::TlsAcceptor;
 #[derive(Debug, Clone)]
 pub struct Server {
     pub port: u16,
-    pub hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
+    pub hosts: HashMap<String, heapless::Vec<Directive, 10>>, // Host -> Directives
     pub cert: Option<heapless::String<200>>,
     pub key: Option<heapless::String<200>>,
 }

@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use crate::config::{build_config, Directive};
 use crate::error::CbltError;
 use crate::server::{server_init, Server};
@@ -97,25 +98,50 @@ async fn server() -> anyhow::Result<()> {
             None
         };
 
-        servers
-            .entry(port)
-            .and_modify(|s| {
-                let hosts = &mut s.hosts;
-                hosts.insert(host.to_string(), directives.clone());
-                s.cert = cert_path.clone();
-                s.key = key_path.clone();
-            })
-            .or_insert({
+        // servers
+        //     .entry(port)
+        //     .and_modify(|s| {
+        //         let hosts = &mut s.hosts;
+        //         let directives_slice = directives.as_slice();
+        //         hosts.insert(host.to_string(), heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{}).unwrap());
+        //         s.cert = cert_path.clone();
+        //         s.key = key_path.clone();
+        //     })
+        //     .or_insert({
+        //         let mut hosts = HashMap::new();
+        //         let host = parsed_host.host;
+        //         let directives_slice = directives.as_slice();
+        //         hosts.insert(host, heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{}).unwrap());
+        //         Server {
+        //             port,
+        //             hosts,
+        //             cert: cert_path.clone(),
+        //             key: key_path.clone(),
+        //         }
+        //     });
+
+        match servers.entry(port) {
+            Entry::Occupied(mut server) => {
+                        let hosts = &mut server.get_mut().hosts;
+                        let directives_slice = directives.as_slice();
+                        hosts.insert(host.to_string(), heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{})?);
+                        server.get_mut().cert = cert_path.clone();
+                        server.get_mut().key = key_path.clone();
+            }
+            Entry::Vacant(new_server) => {
                 let mut hosts = HashMap::new();
                 let host = parsed_host.host;
-                hosts.insert(host, directives.clone());
-                Server {
+                let directives_slice = directives.as_slice();
+                hosts.insert(host, heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{})?);
+                new_server.insert(Server {
                     port,
                     hosts,
-                    cert: cert_path,
-                    key: key_path,
-                }
-            });
+                    cert: cert_path.clone(),
+                    key: key_path.clone(),
+                });
+            }
+        }
+
     }
 
     debug!("{:#?}", servers);
