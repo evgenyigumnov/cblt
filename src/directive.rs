@@ -46,7 +46,9 @@ where
             let cfg_opt = server.hosts.iter().find(|(k, _)| k.starts_with("*"));
             let host_config = match cfg_opt {
                 None => {
-                    let host_config = match server.hosts.get(host) {
+                    let host_str: heapless::String<200> = heapless::String::try_from(host)
+                        .map_err(|_| CbltError::HeapLessError {})?;
+                    let host_config = match server.hosts.get(&host_str) {
                         Some(cfg) => cfg,
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);

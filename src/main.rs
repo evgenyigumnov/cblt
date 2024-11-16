@@ -1,11 +1,12 @@
-use std::collections::hash_map::Entry;
 use crate::config::{build_config, Directive};
 use crate::error::CbltError;
 use crate::server::{server_init, Server};
 use anyhow::Context;
 use clap::Parser;
+use heapless::FnvIndexMap;
 use kdl::KdlDocument;
 use log::{debug, error, info};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::str;
 use tokio::fs;
@@ -87,52 +88,50 @@ async fn server() -> anyhow::Result<()> {
         let port = parsed_host.port.unwrap_or(port);
         debug!("Host: {}, Port: {}", host, port);
         let cert_path = if let Some(path) = cert_path {
-            Some(heapless::String::try_from(path.as_str()).map_err(|_| CbltError::HeapLessError{})?)
+            Some(
+                heapless::String::try_from(path.as_str())
+                    .map_err(|_| CbltError::HeapLessError {})?,
+            )
         } else {
             None
         };
 
         let key_path = if let Some(path) = key_path {
-            Some(heapless::String::try_from(path.as_str()).map_err(|_| CbltError::HeapLessError{})?)
+            Some(
+                heapless::String::try_from(path.as_str())
+                    .map_err(|_| CbltError::HeapLessError {})?,
+            )
         } else {
             None
         };
 
-        // servers
-        //     .entry(port)
-        //     .and_modify(|s| {
-        //         let hosts = &mut s.hosts;
-        //         let directives_slice = directives.as_slice();
-        //         hosts.insert(host.to_string(), heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{}).unwrap());
-        //         s.cert = cert_path.clone();
-        //         s.key = key_path.clone();
-        //     })
-        //     .or_insert({
-        //         let mut hosts = HashMap::new();
-        //         let host = parsed_host.host;
-        //         let directives_slice = directives.as_slice();
-        //         hosts.insert(host, heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{}).unwrap());
-        //         Server {
-        //             port,
-        //             hosts,
-        //             cert: cert_path.clone(),
-        //             key: key_path.clone(),
-        //         }
-        //     });
-
         match servers.entry(port) {
             Entry::Occupied(mut server) => {
-                        let hosts = &mut server.get_mut().hosts;
-                        let directives_slice = directives.as_slice();
-                        hosts.insert(host.to_string(), heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{})?);
-                        server.get_mut().cert = cert_path.clone();
-                        server.get_mut().key = key_path.clone();
+                let hosts = &mut server.get_mut().hosts;
+                let directives_slice = directives.as_slice();
+                hosts
+                    .insert(
+                        heapless::String::try_from(host.as_str())
+                            .map_err(|_| CbltError::HeapLessError {})?,
+                        heapless::Vec::try_from(directives_slice)
+                            .map_err(|_| CbltError::HeapLessError {})?,
+                    )
+                    .map_err(|_| CbltError::HeapLessError {})?;
+                server.get_mut().cert = cert_path.clone();
+                server.get_mut().key = key_path.clone();
             }
             Entry::Vacant(new_server) => {
-                let mut hosts = HashMap::new();
+                let mut hosts = FnvIndexMap::new();
                 let host = parsed_host.host;
                 let directives_slice = directives.as_slice();
-                hosts.insert(host, heapless::Vec::try_from(directives_slice).map_err(|_| CbltError::HeapLessError{})?);
+                hosts
+                    .insert(
+                        heapless::String::try_from(host.as_str())
+                            .map_err(|_| CbltError::HeapLessError {})?,
+                        heapless::Vec::try_from(directives_slice)
+                            .map_err(|_| CbltError::HeapLessError {})?,
+                    )
+                    .map_err(|_| CbltError::HeapLessError {})?;
                 new_server.insert(Server {
                     port,
                     hosts,
@@ -141,7 +140,6 @@ async fn server() -> anyhow::Result<()> {
                 });
             }
         }
-
     }
 
     debug!("{:#?}", servers);

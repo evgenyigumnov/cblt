@@ -50,7 +50,12 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                     details: "path absent".to_string(),
                                 })?
                                 .to_string();
-                            directives.push(Directive::Root { pattern: heapless::String::try_from(pattern.as_str()).map_err(|_| CbltError::HeapLessError{})?, path: heapless::String::try_from(path.as_str()).map_err(|_| CbltError::HeapLessError{})? });
+                            directives.push(Directive::Root {
+                                pattern: heapless::String::try_from(pattern.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                path: heapless::String::try_from(path.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                            });
                         } else {
                             anyhow::bail!("Invalid 'root' directive for host {}", hostname);
                         }
@@ -74,8 +79,10 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                 })?
                                 .to_string();
                             directives.push(Directive::ReverseProxy {
-                                pattern: heapless::String::try_from(pattern.as_str()).map_err(|_| CbltError::HeapLessError{})?,
-                                destination: heapless::String::try_from(destination.as_str()).map_err(|_| CbltError::HeapLessError{})?,
+                                pattern: heapless::String::try_from(pattern.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                destination: heapless::String::try_from(destination.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
                             });
                         } else {
                             anyhow::bail!(
@@ -93,7 +100,10 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                     details: "destination absent".to_string(),
                                 })?
                                 .to_string();
-                            directives.push(Directive::Redir { destination: heapless::String::try_from(destination.as_str()).map_err(|_| CbltError::HeapLessError{})? });
+                            directives.push(Directive::Redir {
+                                destination: heapless::String::try_from(destination.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                            });
                         } else {
                             anyhow::bail!("Invalid 'redir' directive for host {}", hostname);
                         }
@@ -114,8 +124,10 @@ pub fn build_config(doc: &KdlDocument) -> anyhow::Result<HashMap<String, Vec<Dir
                                 })?
                                 .to_string();
                             directives.push(Directive::TlS {
-                                cert: heapless::String::try_from(cert_path.as_str()).map_err(|_| CbltError::HeapLessError{})?,
-                                key: heapless::String::try_from(key_path.as_str()).map_err(|_| CbltError::HeapLessError{})?,
+                                cert: heapless::String::try_from(cert_path.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                key: heapless::String::try_from(key_path.as_str())
+                                    .map_err(|_| CbltError::HeapLessError {})?,
                             });
                         } else {
                             anyhow::bail!("Invalid 'tls' directive for host {}", hostname);
@@ -207,5 +219,3 @@ example.com {
         Ok(())
     }
 }
-
-

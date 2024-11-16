@@ -60,7 +60,6 @@ pub enum CbltError {
         source: http::header::ToStrError,
     },
 
-
     #[error("AbsentKey")]
     AbsentKey,
     #[error("AbsentCert")]
@@ -70,5 +69,4 @@ pub enum CbltError {
 
     #[error("HeapLessError")]
     HeapLessError,
-
 }

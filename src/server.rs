@@ -3,30 +3,31 @@ use crate::config::Directive;
 use crate::directive::directive_process;
 use crate::error::CbltError;
 use crate::request::BUF_SIZE;
+use heapless::FnvIndexMap;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{Semaphore};
+use tokio::sync::Semaphore;
 use tokio_rustls::TlsAcceptor;
-
 
 #[derive(Debug, Clone)]
 pub struct Server {
     pub port: u16,
-    pub hosts: HashMap<String, heapless::Vec<Directive, 10>>, // Host -> Directives
+    pub hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>, // Host -> Directives
     pub cert: Option<heapless::String<200>>,
     pub key: Option<heapless::String<200>>,
 }
 
 pub async fn server_init(server: &Server, max_connections: usize) -> Result<(), CbltError> {
     let acceptor = if server.cert.is_some() {
-        let certs =
-            CertificateDer::pem_file_iter(server.cert.clone().ok_or(CbltError::AbsentCert)?.as_str())?
-                .collect::<Result<Vec<_>, _>>()?;
-        let key = PrivateKeyDer::from_pem_file(server.key.clone().ok_or(CbltError::AbsentKey)?.as_str())?;
+        let certs = CertificateDer::pem_file_iter(
+            server.cert.clone().ok_or(CbltError::AbsentCert)?.as_str(),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+        let key =
+            PrivateKeyDer::from_pem_file(server.key.clone().ok_or(CbltError::AbsentKey)?.as_str())?;
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)?;
