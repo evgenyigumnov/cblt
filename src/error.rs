@@ -59,11 +59,6 @@ pub enum CbltError {
         #[from]
         source: http::header::ToStrError,
     },
-
-    #[error("AbsentKey")]
-    AbsentKey,
-    #[error("AbsentCert")]
-    AbsentCert,
     #[error("KdlParseError: {details:?}")]
     KdlParseError { details: String },
 

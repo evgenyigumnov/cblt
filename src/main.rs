@@ -1,6 +1,6 @@
 use crate::config::{build_config, Directive};
 use crate::error::CbltError;
-use crate::server::{server_init, Server};
+use crate::server::{Server, ServerWorker};
 use anyhow::Context;
 use clap::Parser;
 use heapless::FnvIndexMap;
@@ -146,11 +146,12 @@ async fn server() -> anyhow::Result<()> {
 
     for (_, server) in servers {
         tokio::spawn(async move {
-            match server_init(server.clone(), max_connections).await {
-                Ok(_) => {}
-                Err(err) => {
+            if let Ok(server_worker) = ServerWorker::new(server.clone()) {
+                if let Err(err) = server_worker.run(max_connections).await {
                     error!("Error: {}", err);
                 }
+            } else {
+                error!("Error creating server worker");
             }
         });
     }
