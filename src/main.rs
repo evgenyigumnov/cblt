@@ -54,30 +54,30 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(debug_assertions))]
     only_in_production();
     let num_cpus = std::thread::available_parallelism()?.get();
-    info!("Workers amount: {}", num_cpus);
     let runtime = Builder::new_multi_thread()
         .worker_threads(num_cpus)
         .enable_all()
         .build()?;
 
     runtime.block_on(async {
-        server().await?;
+        server(num_cpus).await?;
         Ok(())
     })
 }
-async fn server() -> anyhow::Result<()> {
+async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let args = Args::parse();
 
     if args.reload {
         let reload_file_path = Path::new("reload");
         if reload_file_path.exists() {
-            return Err(anyhow::anyhow!("File 'reload' already exists"));
+            anyhow::bail!("File 'reload' already exists");
         } else {
             std::fs::File::create(reload_file_path)?;
-            info!("Created 'reload' file");
+            info!("Reload 'Cbltfile' inicated");
         }
         return Ok(());
     }
+    info!("Workers amount: {}", num_cpus);
 
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
