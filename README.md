@@ -98,3 +98,23 @@ I would love to see contributions from the community. If you experience bugs, fe
 2. Do some changes
 3. Create pull request
 
+
+## Development
+
+### Increase stack size for development launch
+
+**Linux:**
+```bash
+RUSTFLAGS="-C link-args=/STACK:8388608" cargo run
+```
+
+**Windows(cmd):**
+```cmd
+set RUSTFLAGS=-C link-args=/STACK:8388608 && cargo run
+```
+
+**Windows PowerShell:**
+```powershell
+$env:RUSTFLAGS="-C link-args=/STACK:8388608"; cargo run
+```
+

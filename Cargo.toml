@@ -43,3 +43,4 @@ heapless = "0.8.0"
 
 [profile.release]
 lto = true
+
