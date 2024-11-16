@@ -76,7 +76,7 @@ async fn server() -> anyhow::Result<()> {
         let mut cert_path = None;
         let mut key_path = None;
         directives.iter().for_each(|d| {
-            if let Directive::Tls { cert, key } = d {
+            if let Directive::TlS { cert, key } = d {
                 port = 443;
                 cert_path = Some(cert.to_string());
                 key_path = Some(key.to_string());
@@ -85,6 +85,18 @@ async fn server() -> anyhow::Result<()> {
         let parsed_host = ParsedHost::from_str(&host);
         let port = parsed_host.port.unwrap_or(port);
         debug!("Host: {}, Port: {}", host, port);
+        let cert_path = if let Some(path) = cert_path {
+            Some(heapless::String::try_from(path.as_str()).map_err(|_| CbltError::HeapLessError{})?)
+        } else {
+            None
+        };
+
+        let key_path = if let Some(path) = key_path {
+            Some(heapless::String::try_from(path.as_str()).map_err(|_| CbltError::HeapLessError{})?)
+        } else {
+            None
+        };
+
         servers
             .entry(port)
             .and_modify(|s| {

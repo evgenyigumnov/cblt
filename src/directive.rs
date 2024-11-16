@@ -184,7 +184,7 @@ where
                             }
                         }
                     }
-                    Directive::Tls { .. } => {}
+                    Directive::TlS { .. } => {}
                 }
             }
 
