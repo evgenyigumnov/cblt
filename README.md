@@ -16,6 +16,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - TLS support
 - Gzip compression
 - Redirects
+- Reload configuration without downtime
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
