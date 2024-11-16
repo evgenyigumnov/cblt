@@ -20,7 +20,7 @@ pub struct Server {
     pub key: Option<heapless::String<200>>,
 }
 
-pub async fn server_init(server: &Server, max_connections: usize) -> Result<(), CbltError> {
+pub async fn server_init(server: Server, max_connections: usize) -> Result<(), CbltError> {
     let acceptor = if server.cert.is_some() {
         let certs = CertificateDer::pem_file_iter(
             server.cert.clone().ok_or(CbltError::AbsentCert)?.as_str(),

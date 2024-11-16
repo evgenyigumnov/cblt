@@ -146,7 +146,7 @@ async fn server() -> anyhow::Result<()> {
 
     for (_, server) in servers {
         tokio::spawn(async move {
-            match server_init(&server, max_connections).await {
+            match server_init(server.clone(), max_connections).await {
                 Ok(_) => {}
                 Err(err) => {
                     error!("Error: {}", err);
