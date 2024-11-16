@@ -8,6 +8,7 @@ use kdl::KdlDocument;
 use log::{debug, error, info};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::path::Path;
 use std::str;
 use tokio::fs;
 use tokio::runtime::Builder;
@@ -41,6 +42,10 @@ struct Args {
     /// Maximum number of connections
     #[arg(long, default_value_t = 10000)]
     max_connections: usize,
+
+    /// Enable reload feature
+    #[arg(long)]
+    reload: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -62,6 +67,18 @@ fn main() -> anyhow::Result<()> {
 }
 async fn server() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    if args.reload {
+        let reload_file_path = Path::new("reload");
+        if reload_file_path.exists() {
+            return Err(anyhow::anyhow!("File 'reload' already exists"));
+        } else {
+            std::fs::File::create(reload_file_path)?;
+            info!("Created 'reload' file");
+        }
+        return Ok(());
+    }
+
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
