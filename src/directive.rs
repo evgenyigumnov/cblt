@@ -1,4 +1,3 @@
-use crate::buffer_pool::SmartVector;
 use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::socket_to_request;
@@ -11,7 +10,9 @@ use heapless::FnvIndexMap;
 use http::{Response, StatusCode};
 use log::{debug, info};
 use reqwest::Client;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Mutex;
 use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
@@ -22,7 +23,7 @@ pub async fn directive_process<S>(
         heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
         HOST_CAPACITY,
     >,
-    buffer: SmartVector,
+    buffer: Arc<Mutex<Vec<u8>>>,
     client_reqwest: Client,
 ) -> Result<(), CbltError>
 where

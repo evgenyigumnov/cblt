@@ -1,12 +1,12 @@
-use crate::buffer_pool::SmartVector;
 use crate::error::CbltError;
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;
 use log::debug;
 use std::str;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::MutexGuard;
+use tokio::sync::{Mutex, MutexGuard};
 use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;
@@ -15,7 +15,7 @@ pub const HEADER_BUF_SIZE: usize = 32;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn socket_to_request<S>(
     socket: &mut S,
-    buffer: SmartVector,
+    buffer: Arc<Mutex<Vec<u8>>>,
 ) -> Result<Request<Vec<u8>>, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,

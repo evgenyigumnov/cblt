@@ -7,9 +7,10 @@ use heapless::FnvIndexMap;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use std::mem;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 
 pub const STRING_CAPACITY: usize = 200;
@@ -88,6 +89,7 @@ impl ServerWorker {
             tokio::spawn(async move {
                 let _permit = permit;
                 let buffer = buffer_pool_arc.get_buffer().await;
+                let buffer_arc_mutex = Arc::new(Mutex::new(buffer));
                 let acceptor = server_clone.settings.read().await.tls_acceptor.clone();
                 let hosts = server_clone.settings.read().await.hosts.clone();
 
@@ -96,7 +98,7 @@ impl ServerWorker {
                         if let Err(err) = directive_process(
                             &mut stream,
                             &hosts,
-                            buffer.clone(),
+                            buffer_arc_mutex.clone(),
                             client_reqwest.clone(),
                         )
                         .await
@@ -109,7 +111,7 @@ impl ServerWorker {
                             if let Err(err) = directive_process(
                                 &mut stream,
                                 &hosts,
-                                buffer.clone(),
+                                buffer_arc_mutex.clone(),
                                 client_reqwest.clone(),
                             )
                             .await
@@ -122,8 +124,15 @@ impl ServerWorker {
                         }
                     },
                 }
-                buffer.lock().await.clear();
-                buffer_pool_arc.return_buffer(buffer).await;
+                buffer_arc_mutex.lock().await.clear();
+                match extract_vec_and_destroy(buffer_arc_mutex).await {
+                    Ok(buffer) => {
+                        buffer_pool_arc.return_buffer(buffer).await;
+                    }
+                    Err(err) => {
+                        error!("Error: {}", err);
+                    }
+                }
             });
         }
     }
@@ -148,6 +157,24 @@ impl ServerWorker {
         settings.tls_acceptor = tls_acceptor;
         Ok(())
     }
+}
+
+async fn extract_vec_and_destroy(
+    buffer_arc_mutex: Arc<Mutex<Vec<u8>>>,
+) -> Result<Vec<u8>, CbltError> {
+    if Arc::strong_count(&buffer_arc_mutex) != 1 {
+        return Err(CbltError::BufferPoolError {
+            details: "Buffer in use".to_string(),
+        });
+    }
+
+    let mut guard = buffer_arc_mutex.lock().await;
+
+    let vec = mem::take(&mut *guard);
+
+    drop(guard);
+
+    Ok(vec)
 }
 
 impl Clone for ServerWorker {
