@@ -34,6 +34,9 @@ cblt
 ```bash
 docker run -d -p 80:80 -p 443:443 --restart unless-stopped --name cblt ievkz/cblt
 ```
+**Voulmes**:
+- -v /your/path/Cbltfile:/cblt/etc/Cbltfile  # Cbltfile configuration if you would like to replace [default config](https://github.com/evgenyigumnov/cblt/blob/main/Cbltfile)
+- -v /your/path/assets:/cblt/assets # Folder with your static content (index.html and etc)
 
 
 ### Test
