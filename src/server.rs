@@ -38,13 +38,13 @@ pub struct ServerSettings {
         heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
         HOST_CAPACITY,
     >,
-    pub tls_acceptor: Option<Arc<TlsAcceptor>>,
+    pub tls_acceptor: Option<TlsAcceptor>,
 }
 
 fn tls_acceptor_builder(
     cert_path: Option<&str>,
     key_path: Option<&str>,
-) -> Result<Option<Arc<TlsAcceptor>>, CbltError> {
+) -> Result<Option<TlsAcceptor>, CbltError> {
     if let (Some(cert_path), Some(key_path)) = (cert_path, key_path) {
         let certs = CertificateDer::pem_file_iter(cert_path)?.collect::<Result<Vec<_>, _>>()?;
         let key = PrivateKeyDer::from_pem_file(key_path)?;
@@ -52,7 +52,7 @@ fn tls_acceptor_builder(
         let server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)?;
-        Ok(Some(Arc::new(TlsAcceptor::from(Arc::new(server_config)))))
+        Ok(Some(TlsAcceptor::from(Arc::new(server_config))))
     } else {
         Ok(None)
     }
