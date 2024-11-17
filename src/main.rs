@@ -122,7 +122,7 @@ async fn process_workers(
     servers: HashMap<u16, Server>,
 ) -> Result<(), CbltError> {
     for (port, server) in servers {
-        if let Some(worker) = workers.lock().await.get(&port) {
+        if let Some(worker) = workers.lock().await.get_mut(&port) {
             worker.update(server.hosts, server.cert, server.key).await?;
             info!("Server worker updated on port: {}", port);
         } else {

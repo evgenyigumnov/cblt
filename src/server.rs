@@ -7,7 +7,7 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{Semaphore};
 use tokio_rustls::TlsAcceptor;
 
 pub const STRING_CAPACITY: usize = 200;
@@ -28,9 +28,10 @@ pub struct Server {
 
 pub struct ServerWorker {
     pub port: u16,
-    pub settings: Arc<RwLock<ServerSettings>>,
+    pub settings: ServerSettings,
 }
 
+#[derive(Clone)]
 pub struct ServerSettings {
     pub hosts: FnvIndexMap<
         heapless::String<STRING_CAPACITY>,
@@ -61,10 +62,10 @@ impl ServerWorker {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
         Ok(ServerWorker {
             port: server.port,
-            settings: Arc::new(RwLock::new(ServerSettings {
+            settings: ServerSettings {
                 hosts: server.hosts,
                 tls_acceptor,
-            })),
+            },
         })
     }
 
@@ -83,8 +84,8 @@ impl ServerWorker {
 
             tokio::spawn(async move {
                 let _permit = permit;
-                let acceptor = server_clone.settings.read().await.tls_acceptor.clone();
-                let hosts = server_clone.settings.read().await.hosts.clone();
+                let acceptor = server_clone.settings.tls_acceptor.clone();
+                let hosts = server_clone.settings.hosts.clone();
 
                 match acceptor {
                     None => {
@@ -113,7 +114,7 @@ impl ServerWorker {
 
     /// Updates the server settings except for the port.
     pub async fn update(
-        &self,
+        &mut self,
         hosts: FnvIndexMap<
             heapless::String<STRING_CAPACITY>,
             heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
@@ -126,9 +127,8 @@ impl ServerWorker {
         let key_path_opt = key_path.as_deref();
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
 
-        let mut settings = self.settings.write().await;
-        settings.hosts = hosts;
-        settings.tls_acceptor = tls_acceptor;
+        self.settings.hosts = hosts;
+        self.settings.tls_acceptor = tls_acceptor;
         Ok(())
     }
 }
