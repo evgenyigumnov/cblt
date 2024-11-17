@@ -1,18 +1,13 @@
-use crate::buffer_pool::{BufferManager, Pool};
 use crate::config::Directive;
 use crate::directive::directive_process;
 use crate::error::CbltError;
-use crate::request::BUF_SIZE;
 use heapless::FnvIndexMap;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use std::mem;
 use std::sync::Arc;
-use deadpool::managed;
-use deadpool::managed::{PoolConfig};
 use tokio::net::TcpListener;
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 
 pub const STRING_CAPACITY: usize = 200;
@@ -77,55 +72,32 @@ impl ServerWorker {
         let semaphore = Arc::new(Semaphore::new(max_connections));
         let addr = format!("0.0.0.0:{}", self.port);
         let listener = TcpListener::bind(&addr).await?;
-        let manager = BufferManager{
-            buffer_size: BUF_SIZE,
-        };
-
-        let pool = Pool::builder(manager)
-            .config(PoolConfig {
-                max_size: max_connections, // Максимальное количество буферов в пуле
-                ..Default::default()
-            })
-            .build()?;
-        let buffer_pool = Arc::new(pool);
         info!("Listening on port: {}", self.port);
         let client_reqwest = reqwest::Client::new();
 
         loop {
             let client_reqwest = client_reqwest.clone();
-            let buffer_pool_arc = buffer_pool.clone();
             let server_clone = self.clone();
             let (mut stream, _) = listener.accept().await?;
             let permit = semaphore.clone().acquire_owned().await?;
 
             tokio::spawn(async move {
                 let _permit = permit;
-                let buffer = buffer_pool_arc.get().await.unwrap();
                 let acceptor = server_clone.settings.read().await.tls_acceptor.clone();
                 let hosts = server_clone.settings.read().await.hosts.clone();
 
                 match acceptor {
                     None => {
-                        if let Err(err) = directive_process(
-                            &mut stream,
-                            &hosts,
-                            buffer,
-                            client_reqwest.clone(),
-                        )
-                        .await
+                        if let Err(err) =
+                            directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                         {
                             error!("Error: {}", err);
                         }
                     }
                     Some(ref acceptor) => match acceptor.accept(stream).await {
                         Ok(mut stream) => {
-                            if let Err(err) = directive_process(
-                                &mut stream,
-                                &hosts,
-                                buffer,
-                                client_reqwest.clone(),
-                            )
-                            .await
+                            if let Err(err) =
+                                directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                             {
                                 error!("Error: {}", err);
                             }
@@ -160,7 +132,6 @@ impl ServerWorker {
         Ok(())
     }
 }
-
 
 impl Clone for ServerWorker {
     fn clone(&self) -> Self {

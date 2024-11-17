@@ -1,5 +1,6 @@
 use crate::error::CbltError;
 use crate::response::send_response_file;
+use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
@@ -9,7 +10,7 @@ use tracing::instrument;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn file_directive<S>(
     root_path: Option<&str>,
-    request: &Request<Vec<u8>>,
+    request: &Request<BytesMut>,
     socket: &mut S,
 ) -> Result<StatusCode, CbltError>
 where
