@@ -184,10 +184,7 @@ where
                                 return Ok(());
                             }
                             Err(err) => {
-                                log_request_response(
-                                    &request,
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                );
+                                log_request_response(&request, StatusCode::INTERNAL_SERVER_ERROR);
                                 return Err(err);
                             }
                         }

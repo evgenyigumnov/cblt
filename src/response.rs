@@ -208,7 +208,5 @@ pub fn error_response(status: StatusCode) -> Result<Response<BytesMut>, CbltErro
         _ => "Unknown error",
     };
     let bytes = BytesMut::from(msg);
-    Ok(Response::builder()
-        .status(status)
-        .body(bytes)?)
+    Ok(Response::builder().status(status).body(bytes)?)
 }

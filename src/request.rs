@@ -9,7 +9,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;
-pub const STATIC_BUF_SIZE: usize = 1024;
 pub const HEADER_BUF_SIZE: usize = 32;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn socket_to_request<S>(
@@ -20,13 +19,10 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     loop {
-        let mut temp_buf = [0; STATIC_BUF_SIZE];
-        let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
+        let bytes_read = socket.read_buf(&mut buf).await.unwrap_or(0);
         if bytes_read == 0 {
-            break; // Connection closed
+            break;
         }
-        buf.extend_from_slice(&temp_buf[..bytes_read]);
-
         // Try to parse the headers
         let mut headers = [httparse::EMPTY_HEADER; HEADER_BUF_SIZE];
         let mut req = httparse::Request::new(&mut headers);
@@ -127,14 +123,12 @@ where
 
             if let Some(content_length) = content_length_opt {
                 let mut body = buf.split_off(header_len);
-                let mut temp_buf = vec![0; content_length - body.len()];
 
                 while body.len() < content_length {
-                    let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
+                    let bytes_read = socket.read_buf(&mut body).await.unwrap_or(0);
                     if bytes_read == 0 {
                         break;
                     }
-                    body.extend_from_slice(&temp_buf[..bytes_read]);
                 }
 
                 Ok(builder.body(body).ok().map(|req| (req, content_length_opt)))
