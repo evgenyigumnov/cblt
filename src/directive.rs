@@ -87,7 +87,7 @@ where
                         let ret = file_server::file_directive(root_path, &request, socket).await;
                         match ret {
                             Ok(_) => {
-                                log_request_response::<BytesMut>(&request, StatusCode::OK);
+                                log_request_response(&request, StatusCode::OK);
                                 return Ok(());
                             }
                             Err(error) => match error {
@@ -98,11 +98,11 @@ where
                                     let response = error_response(status_code);
                                     match send_response(socket, response?).await {
                                         Ok(()) => {
-                                            log_request_response::<BytesMut>(&request, status_code);
+                                            log_request_response(&request, status_code);
                                             return Ok(());
                                         }
                                         Err(err) => {
-                                            log_request_response::<BytesMut>(
+                                            log_request_response(
                                                 &request,
                                                 StatusCode::INTERNAL_SERVER_ERROR,
                                             );
@@ -112,7 +112,7 @@ where
                                 }
                                 CbltError::DirectiveNotMatched => {}
                                 err => {
-                                    log_request_response::<Vec<u8>>(
+                                    log_request_response(
                                         &request,
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                     );
@@ -138,7 +138,7 @@ where
                         .await
                         {
                             Ok(status) => {
-                                log_request_response::<Vec<u8>>(&request, status);
+                                log_request_response(&request, status);
                                 return Ok(());
                             }
                             Err(err) => match err {
@@ -150,11 +150,11 @@ where
                                     let response = error_response(status_code);
                                     match send_response(socket, response?).await {
                                         Ok(()) => {
-                                            log_request_response::<Vec<u8>>(&request, status_code);
+                                            log_request_response(&request, status_code);
                                             return Ok(());
                                         }
                                         Err(err) => {
-                                            log_request_response::<Vec<u8>>(
+                                            log_request_response(
                                                 &request,
                                                 StatusCode::INTERNAL_SERVER_ERROR,
                                             );
@@ -163,7 +163,7 @@ where
                                     }
                                 }
                                 other => {
-                                    log_request_response::<Vec<u8>>(
+                                    log_request_response(
                                         &request,
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                     );
@@ -177,14 +177,14 @@ where
                         let response = Response::builder()
                             .status(StatusCode::FOUND)
                             .header("Location", &dest)
-                            .body(Vec::new())?; // Empty body for redirects?
+                            .body(BytesMut::new())?; // Empty body for redirects?
                         match send_response(socket, response).await {
                             Ok(_) => {
-                                log_request_response::<Vec<u8>>(&request, StatusCode::FOUND);
+                                log_request_response(&request, StatusCode::FOUND);
                                 return Ok(());
                             }
                             Err(err) => {
-                                log_request_response::<Vec<u8>>(
+                                log_request_response(
                                     &request,
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                 );
@@ -198,10 +198,10 @@ where
 
             let response = error_response(StatusCode::NOT_FOUND);
             if let Err(err) = send_response(socket, response?).await {
-                log_request_response::<Vec<u8>>(&request, StatusCode::INTERNAL_SERVER_ERROR);
+                log_request_response(&request, StatusCode::INTERNAL_SERVER_ERROR);
                 return Err(err);
             }
-            log_request_response::<Vec<u8>>(&request, StatusCode::NOT_FOUND);
+            log_request_response(&request, StatusCode::NOT_FOUND);
             Ok(())
         }
     }

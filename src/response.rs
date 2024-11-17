@@ -145,7 +145,7 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn log_request_response<T>(request: &Request<BytesMut>, status_code: StatusCode) {
+pub fn log_request_response(request: &Request<BytesMut>, status_code: StatusCode) {
     let method = &request.method();
     let uri = request.uri();
     let headers = request.headers();
@@ -164,7 +164,7 @@ pub fn log_request_response<T>(request: &Request<BytesMut>, status_code: StatusC
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CbltError>
+pub async fn send_response<S>(socket: &mut S, response: Response<BytesMut>) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
@@ -200,15 +200,15 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn error_response(status: StatusCode) -> Result<Response<Vec<u8>>, CbltError> {
+pub fn error_response(status: StatusCode) -> Result<Response<BytesMut>, CbltError> {
     let msg = match status {
         StatusCode::BAD_REQUEST => "Bad request",
         StatusCode::FORBIDDEN => "Forbidden",
         StatusCode::NOT_FOUND => "Not found",
         _ => "Unknown error",
     };
-
+    let bytes = BytesMut::from(msg);
     Ok(Response::builder()
         .status(status)
-        .body(msg.as_bytes().to_vec())?)
+        .body(bytes)?)
 }
