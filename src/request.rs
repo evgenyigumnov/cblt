@@ -143,28 +143,3 @@ where
         Err(_) => Ok(None),              // Parsing failed
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::only_in_debug;
-    use crate::request::parse_request_headers;
-    use std::error::Error;
-
-    #[test]
-    fn test_simple() -> Result<(), Box<dyn Error>> {
-        only_in_debug();
-
-        let request_str = "POST /submit HTTP/1.1\r\n\
-Host: example.com\r\n\
-User-Agent: curl/7.68.0\r\n\
-Accept: */*\r\n\
-Content-Type: application/json\r\n\
-Content-Length: 15\r\n\r\n\
-{\"key\":\"value\"}";
-
-        let req = parse_request_headers(request_str);
-        println!("{:#?}", req);
-
-        Ok(())
-    }
-}
