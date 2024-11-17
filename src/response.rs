@@ -1,5 +1,6 @@
 use crate::error::CbltError;
 use async_compression::tokio::write::GzipEncoder;
+use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
@@ -11,7 +12,7 @@ use tracing::instrument;
 pub async fn send_response_file<S>(
     mut socket: S,
     response: Response<impl AsyncRead + Debug + AsyncWrite>,
-    req_opt: &Request<Vec<u8>>,
+    req: &Request<BytesMut>,
 ) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
@@ -29,7 +30,7 @@ where
         .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
         .await?;
     socket.write_all(b"\r\n").await?;
-    let gzip_supported = gzip_support_detect(req_opt);
+    let gzip_supported = gzip_support_detect(req);
     if gzip_supported {
         // socket.write_all(b"Content-Encoding: gzip").await?;
         // socket.write_all(b"\r\n").await?;
@@ -64,7 +65,7 @@ where
     Ok(())
 }
 
-fn gzip_support_detect(req_opt: &Request<Vec<u8>>) -> bool {
+fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
     let accept_encoding = req_opt
         .headers()
         .get(http::header::ACCEPT_ENCODING)
@@ -80,7 +81,7 @@ fn gzip_support_detect(req_opt: &Request<Vec<u8>>) -> bool {
 pub async fn send_response_stream<S, T>(
     mut socket: &mut S,
     response: Response<&str>,
-    req_opt: &Request<Vec<u8>>,
+    req_opt: &Request<BytesMut>,
     stream: &mut T,
 ) -> Result<(), CbltError>
 where
@@ -144,7 +145,7 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn log_request_response<T>(request: &Request<Vec<u8>>, status_code: StatusCode) {
+pub fn log_request_response(request: &Request<BytesMut>, status_code: StatusCode) {
     let method = &request.method();
     let uri = request.uri();
     let headers = request.headers();
@@ -163,7 +164,7 @@ pub fn log_request_response<T>(request: &Request<Vec<u8>>, status_code: StatusCo
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub async fn send_response<S>(socket: &mut S, response: Response<Vec<u8>>) -> Result<(), CbltError>
+pub async fn send_response<S>(socket: &mut S, response: Response<BytesMut>) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
 {
@@ -199,15 +200,13 @@ where
 }
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
-pub fn error_response(status: StatusCode) -> Result<Response<Vec<u8>>, CbltError> {
+pub fn error_response(status: StatusCode) -> Result<Response<BytesMut>, CbltError> {
     let msg = match status {
         StatusCode::BAD_REQUEST => "Bad request",
         StatusCode::FORBIDDEN => "Forbidden",
         StatusCode::NOT_FOUND => "Not found",
         _ => "Unknown error",
     };
-
-    Ok(Response::builder()
-        .status(status)
-        .body(msg.as_bytes().to_vec())?)
+    let bytes = BytesMut::from(msg);
+    Ok(Response::builder().status(status).body(bytes)?)
 }

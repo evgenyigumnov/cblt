@@ -5,8 +5,6 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum CbltError {
     #[error("ParseRequestError: {details:?}")]
-    ParseRequestError { details: String },
-    #[error("RequestError: {status_code:?} {details:?}")]
     RequestError {
         details: String,
         status_code: StatusCode,
@@ -65,16 +63,8 @@ pub enum CbltError {
         #[from]
         source: kdl::KdlError,
     },
-    // from BuildError
-    #[error("BuildError: {source:?}")]
-    BuildError {
-        #[from]
-        source: deadpool::managed::BuildError,
-    },
     #[error("KdlParseError: {details:?}")]
     KdlParseError { details: String },
     #[error("HeapLessError")]
     HeapLessError,
-    #[error("BufferPoolError: {details:?}")]
-    BufferPoolError { details: String },
 }

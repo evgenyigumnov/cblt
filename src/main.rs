@@ -17,20 +17,13 @@ use tracing::instrument;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::FmtSubscriber;
-
 mod config;
+mod directive;
+mod error;
+mod file_server;
 mod request;
 mod response;
-
-mod directive;
-
-mod error;
-
-mod file_server;
 mod reverse_proxy;
-
-mod buffer_pool;
-
 mod server;
 
 #[derive(Parser)]

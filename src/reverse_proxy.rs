@@ -1,5 +1,6 @@
 use crate::response::send_response_stream;
 use crate::{matches_pattern, CbltError};
+use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
 use log::debug;
 use reqwest::Client;
@@ -8,7 +9,7 @@ use tracing::instrument;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn proxy_directive<S>(
-    request: &Request<Vec<u8>>,
+    request: &Request<BytesMut>,
     socket: &mut S,
     pattern: &str,
     destination: &str,
@@ -28,7 +29,7 @@ where
         }
         let body = request.body();
         if !body.is_empty() {
-            req_builder = req_builder.body(body.clone());
+            req_builder = req_builder.body(body.to_vec());
         }
 
         match req_builder.send().await {
