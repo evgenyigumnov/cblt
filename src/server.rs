@@ -1,4 +1,4 @@
-use crate::buffer_pool::BufferPool;
+use crate::buffer_pool::{BufferManager, Pool};
 use crate::config::Directive;
 use crate::directive::directive_process;
 use crate::error::CbltError;
@@ -9,6 +9,8 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::mem;
 use std::sync::Arc;
+use deadpool::managed;
+use deadpool::managed::{PoolConfig};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
@@ -75,7 +77,17 @@ impl ServerWorker {
         let semaphore = Arc::new(Semaphore::new(max_connections));
         let addr = format!("0.0.0.0:{}", self.port);
         let listener = TcpListener::bind(&addr).await?;
-        let buffer_pool = Arc::new(BufferPool::new(max_connections, BUF_SIZE));
+        let manager = BufferManager{
+            buffer_size: BUF_SIZE,
+        };
+
+        let pool = Pool::builder(manager)
+            .config(PoolConfig {
+                max_size: max_connections, // Максимальное количество буферов в пуле
+                ..Default::default()
+            })
+            .build()?;
+        let buffer_pool = Arc::new(pool);
         info!("Listening on port: {}", self.port);
         let client_reqwest = reqwest::Client::new();
 
@@ -88,8 +100,7 @@ impl ServerWorker {
 
             tokio::spawn(async move {
                 let _permit = permit;
-                let buffer = buffer_pool_arc.get_buffer().await;
-                let buffer_arc_mutex = Arc::new(Mutex::new(buffer));
+                let buffer = buffer_pool_arc.get().await.unwrap();
                 let acceptor = server_clone.settings.read().await.tls_acceptor.clone();
                 let hosts = server_clone.settings.read().await.hosts.clone();
 
@@ -98,7 +109,7 @@ impl ServerWorker {
                         if let Err(err) = directive_process(
                             &mut stream,
                             &hosts,
-                            buffer_arc_mutex.clone(),
+                            buffer,
                             client_reqwest.clone(),
                         )
                         .await
@@ -111,7 +122,7 @@ impl ServerWorker {
                             if let Err(err) = directive_process(
                                 &mut stream,
                                 &hosts,
-                                buffer_arc_mutex.clone(),
+                                buffer,
                                 client_reqwest.clone(),
                             )
                             .await
@@ -123,15 +134,6 @@ impl ServerWorker {
                             error!("TLS Error: {}", err);
                         }
                     },
-                }
-                buffer_arc_mutex.lock().await.clear();
-                match extract_vec_and_destroy(buffer_arc_mutex).await {
-                    Ok(buffer) => {
-                        buffer_pool_arc.return_buffer(buffer).await;
-                    }
-                    Err(err) => {
-                        error!("Error: {}", err);
-                    }
                 }
             });
         }
@@ -159,23 +161,6 @@ impl ServerWorker {
     }
 }
 
-async fn extract_vec_and_destroy(
-    buffer_arc_mutex: Arc<Mutex<Vec<u8>>>,
-) -> Result<Vec<u8>, CbltError> {
-    if Arc::strong_count(&buffer_arc_mutex) != 1 {
-        return Err(CbltError::BufferPoolError {
-            details: "Buffer in use".to_string(),
-        });
-    }
-
-    let mut guard = buffer_arc_mutex.lock().await;
-
-    let vec = mem::take(&mut *guard);
-
-    drop(guard);
-
-    Ok(vec)
-}
 
 impl Clone for ServerWorker {
     fn clone(&self) -> Self {
