@@ -65,6 +65,12 @@ pub enum CbltError {
         #[from]
         source: kdl::KdlError,
     },
+    // from BuildError
+    #[error("BuildError: {source:?}")]
+    BuildError {
+        #[from]
+        source: deadpool::managed::BuildError,
+    },
     #[error("KdlParseError: {details:?}")]
     KdlParseError { details: String },
     #[error("HeapLessError")]

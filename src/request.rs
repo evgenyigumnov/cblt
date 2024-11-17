@@ -5,9 +5,11 @@ use httparse::Status;
 use log::debug;
 use std::str;
 use std::sync::Arc;
+use deadpool::managed::Object;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Mutex, MutexGuard};
 use tracing::instrument;
+use crate::buffer_pool::BufferManager;
 
 pub const BUF_SIZE: usize = 8192;
 pub const STATIC_BUF_SIZE: usize = 1024;
@@ -15,12 +17,12 @@ pub const HEADER_BUF_SIZE: usize = 32;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn socket_to_request<S>(
     socket: &mut S,
-    buffer: Arc<Mutex<Vec<u8>>>,
+    buffer: Object<BufferManager>,
 ) -> Result<Request<Vec<u8>>, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
-    let mut buf = buffer.lock().await;
+    let mut buf = buffer;
     loop {
         let mut temp_buf = [0; STATIC_BUF_SIZE];
         let bytes_read = socket.read(&mut temp_buf).await.unwrap_or(0);
@@ -85,7 +87,7 @@ where
 pub async fn parse_request_headers<S>(
     req_str: &str,
     header_len: usize,
-    buf: &MutexGuard<'_, Vec<u8>>,
+    buf: &Object<BufferManager>,
     socket: &mut S,
 ) -> Option<(Request<Vec<u8>>, Option<usize>)>
 where

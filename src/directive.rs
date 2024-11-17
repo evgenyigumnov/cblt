@@ -11,9 +11,11 @@ use http::{Response, StatusCode};
 use log::{debug, info};
 use reqwest::Client;
 use std::sync::Arc;
+use deadpool::managed::Object;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tracing::instrument;
+use crate::buffer_pool::BufferManager;
 
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn directive_process<S>(
@@ -23,7 +25,7 @@ pub async fn directive_process<S>(
         heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
         HOST_CAPACITY,
     >,
-    buffer: Arc<Mutex<Vec<u8>>>,
+    buffer: Object<BufferManager>,
     client_reqwest: Client,
 ) -> Result<(), CbltError>
 where
