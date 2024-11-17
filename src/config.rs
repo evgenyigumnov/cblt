@@ -3,6 +3,8 @@ use crate::server::STRING_CAPACITY;
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
+use tracing::instrument;
+
 #[derive(Debug, Clone)]
 pub enum Directive {
     Root {
@@ -23,6 +25,7 @@ pub enum Directive {
     },
 }
 
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, CbltError> {
     let mut hosts = HashMap::new();
 

@@ -65,6 +65,7 @@ where
     Ok(())
 }
 
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
     let accept_encoding = req_opt
         .headers()

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore};
 use tokio_rustls::TlsAcceptor;
+use tracing::instrument;
 
 pub const STRING_CAPACITY: usize = 200;
 pub const DIRECTIVE_CAPACITY: usize = 10;
@@ -41,6 +42,7 @@ pub struct ServerSettings {
     pub tls_acceptor: Option<TlsAcceptor>,
 }
 
+#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 fn tls_acceptor_builder(
     cert_path: Option<&str>,
     key_path: Option<&str>,
@@ -58,6 +60,7 @@ fn tls_acceptor_builder(
     }
 }
 impl ServerWorker {
+    #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
     pub fn new(server: Server) -> Result<Self, CbltError> {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
         Ok(ServerWorker {
@@ -69,6 +72,7 @@ impl ServerWorker {
         })
     }
 
+    #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
     pub async fn run(&self, max_connections: usize) -> Result<(), CbltError> {
         let semaphore = Arc::new(Semaphore::new(max_connections));
         let addr = format!("0.0.0.0:{}", self.port);
@@ -112,7 +116,7 @@ impl ServerWorker {
         }
     }
 
-    /// Updates the server settings except for the port.
+    #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
     pub async fn update(
         &mut self,
         hosts: FnvIndexMap<
