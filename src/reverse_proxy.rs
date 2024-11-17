@@ -7,7 +7,7 @@ use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn proxy_directive<S>(
     request: &Request<BytesMut>,
     socket: &mut S,

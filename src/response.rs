@@ -8,7 +8,7 @@ use std::pin;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn send_response_file<S>(
     mut socket: S,
     response: Response<impl AsyncRead + Debug + AsyncWrite>,
@@ -65,7 +65,7 @@ where
     Ok(())
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
     let accept_encoding = req_opt
         .headers()
@@ -78,7 +78,7 @@ fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
     gzip_supported
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn send_response_stream<S, T>(
     mut socket: &mut S,
     response: Response<&str>,
@@ -145,7 +145,7 @@ where
     Ok(())
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn log_request_response(request: &Request<BytesMut>, status_code: StatusCode) {
     let method = &request.method();
     let uri = request.uri();
@@ -164,7 +164,7 @@ pub fn log_request_response(request: &Request<BytesMut>, status_code: StatusCode
     );
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn send_response<S>(socket: &mut S, response: Response<BytesMut>) -> Result<(), CbltError>
 where
     S: AsyncWriteExt + Unpin,
@@ -200,7 +200,7 @@ where
     Ok(())
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn error_response(status: StatusCode) -> Result<Response<BytesMut>, CbltError> {
     let msg = match status {
         StatusCode::BAD_REQUEST => "Bad request",

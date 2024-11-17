@@ -25,7 +25,7 @@ pub enum Directive {
     },
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, CbltError> {
     let mut hosts = HashMap::new();
 

@@ -42,7 +42,6 @@ struct Args {
     reload: bool,
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 fn main() -> anyhow::Result<()> {
     #[cfg(debug_assertions)]
     only_in_debug();
@@ -59,7 +58,7 @@ fn main() -> anyhow::Result<()> {
         Ok(())
     })
 }
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let args = Arc::new(Args::parse());
 
@@ -110,7 +109,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
     let cbltfile_content = fs::read_to_string(&args.cfg).await?;
     let doc: KdlDocument = cbltfile_content.parse()?;
@@ -119,7 +118,7 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
     Ok(build_servers(config)?)
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn process_workers(
     args: Arc<Args>,
     workers: Arc<Mutex<HashMap<u16, ServerWorker>>>,
@@ -151,7 +150,7 @@ async fn process_workers(
     Ok(())
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn build_servers(
     config: HashMap<String, Vec<Directive>>,
 ) -> Result<HashMap<u16, Server>, CbltError> {
@@ -232,6 +231,12 @@ fn build_servers(
 pub fn only_in_debug() {
     let _ =
         env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
+}
+
+#[allow(dead_code)]
+fn only_in_production() {
+    let _ =
+        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE) // Set the maximum log level
         .with_span_events(FmtSpan::CLOSE)
@@ -239,13 +244,7 @@ pub fn only_in_debug() {
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 }
 
-#[allow(dead_code)]
-fn only_in_production() {
-    let _ =
-        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
-}
-
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn matches_pattern(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         true
@@ -263,7 +262,7 @@ pub struct ParsedHost {
 }
 
 impl ParsedHost {
-    #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     fn from_str(host_str: &str) -> Self {
         if let Some((host_part, port_part)) = host_str.split_once(':') {
             let port = port_part.parse().ok();

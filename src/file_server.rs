@@ -7,7 +7,7 @@ use tokio::fs::File;
 use tokio::io::AsyncWrite;
 use tracing::instrument;
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn file_directive<S>(
     root_path: Option<&str>,
     request: &Request<BytesMut>,
@@ -53,13 +53,13 @@ where
     }
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn file_size(file: &File) -> Result<u64, CbltError> {
     let metadata = file.metadata().await?;
     Ok(metadata.len())
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn file_response(file: File, content_length: u64) -> Result<Response<File>, CbltError> {
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -67,7 +67,7 @@ fn file_response(file: File, content_length: u64) -> Result<Response<File>, Cblt
         .body(file)?)
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn sanitize_path(base_path: &Path, requested_path: &str) -> Option<PathBuf> {
     let mut full_path = base_path.to_path_buf();
     let requested_path = Path::new(requested_path);

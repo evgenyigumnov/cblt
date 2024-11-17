@@ -10,7 +10,7 @@ use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;
 pub const HEADER_BUF_SIZE: usize = 32;
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn socket_to_request<S>(
     socket: &mut S,
     mut buf: &mut BytesMut,
@@ -63,7 +63,7 @@ where
     });
 }
 
-#[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn parse_request_headers<S>(
     header_len: usize,
     buf: &mut BytesMut,

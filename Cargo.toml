@@ -41,6 +41,10 @@ thiserror = "2.0.3"
 anyhow = "1.0.93"
 heapless = "0.8.0"
 
+[features]
+default = []
+trace = []
+
 [profile.release]
 lto = true
 
