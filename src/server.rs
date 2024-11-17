@@ -12,12 +12,20 @@ use tokio::net::TcpListener;
 use tokio::sync::{RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 
+pub const STRING_CAPACITY: usize = 200;
+pub const DIRECTIVE_CAPACITY: usize = 10;
+pub const HOST_CAPACITY: usize = 8;
+
 #[derive(Debug, Clone)]
 pub struct Server {
     pub port: u16,
-    pub hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>, // Host -> Directives
-    pub cert: Option<heapless::String<200>>,
-    pub key: Option<heapless::String<200>>,
+    pub hosts: FnvIndexMap<
+        heapless::String<STRING_CAPACITY>,
+        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
+        HOST_CAPACITY,
+    >, // Host -> Directives
+    pub cert: Option<heapless::String<STRING_CAPACITY>>,
+    pub key: Option<heapless::String<STRING_CAPACITY>>,
 }
 
 pub struct ServerWorker {
@@ -26,7 +34,11 @@ pub struct ServerWorker {
 }
 
 pub struct ServerSettings {
-    pub hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
+    pub hosts: FnvIndexMap<
+        heapless::String<STRING_CAPACITY>,
+        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
+        HOST_CAPACITY,
+    >,
     pub tls_acceptor: Option<Arc<TlsAcceptor>>,
 }
 
@@ -119,9 +131,13 @@ impl ServerWorker {
     /// Updates the server settings except for the port.
     pub async fn update(
         &self,
-        hosts: FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
-        cert_path: Option<heapless::String<200>>,
-        key_path: Option<heapless::String<200>>,
+        hosts: FnvIndexMap<
+            heapless::String<STRING_CAPACITY>,
+            heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
+            HOST_CAPACITY,
+        >,
+        cert_path: Option<heapless::String<STRING_CAPACITY>>,
+        key_path: Option<heapless::String<STRING_CAPACITY>>,
     ) -> Result<(), CbltError> {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();

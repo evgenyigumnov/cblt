@@ -3,6 +3,9 @@ use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::socket_to_request;
 use crate::response::{error_response, log_request_response, send_response};
+use crate::server::DIRECTIVE_CAPACITY;
+use crate::server::HOST_CAPACITY;
+use crate::server::STRING_CAPACITY;
 use crate::{file_server, matches_pattern, reverse_proxy};
 use heapless::FnvIndexMap;
 use http::{Response, StatusCode};
@@ -14,7 +17,11 @@ use tracing::instrument;
 #[cfg_attr(debug_assertions, instrument(level = "trace", skip_all))]
 pub async fn directive_process<S>(
     socket: &mut S,
-    hosts: &FnvIndexMap<heapless::String<200>, heapless::Vec<Directive, 10>, 8>,
+    hosts: &FnvIndexMap<
+        heapless::String<STRING_CAPACITY>,
+        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
+        HOST_CAPACITY,
+    >,
     buffer: SmartVector,
     client_reqwest: Client,
 ) -> Result<(), CbltError>
@@ -46,8 +53,9 @@ where
             let cfg_opt = hosts.iter().find(|(k, _)| k.starts_with("*"));
             let host_config = match cfg_opt {
                 None => {
-                    let host_str: heapless::String<200> = heapless::String::try_from(host)
-                        .map_err(|_| CbltError::HeapLessError {})?;
+                    let host_str: heapless::String<STRING_CAPACITY> =
+                        heapless::String::try_from(host)
+                            .map_err(|_| CbltError::HeapLessError {})?;
                     let host_config = match hosts.get(&host_str) {
                         Some(cfg) => cfg,
                         None => {

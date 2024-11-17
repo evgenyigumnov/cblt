@@ -1,25 +1,25 @@
 use crate::error::CbltError;
+use crate::server::STRING_CAPACITY;
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
-
 #[derive(Debug, Clone)]
 pub enum Directive {
     Root {
-        pattern: heapless::String<200>,
-        path: heapless::String<200>,
+        pattern: heapless::String<STRING_CAPACITY>,
+        path: heapless::String<STRING_CAPACITY>,
     },
     FileServer,
     ReverseProxy {
-        pattern: heapless::String<200>,
-        destination: heapless::String<200>,
+        pattern: heapless::String<STRING_CAPACITY>,
+        destination: heapless::String<STRING_CAPACITY>,
     },
     Redir {
-        destination: heapless::String<200>,
+        destination: heapless::String<STRING_CAPACITY>,
     },
     TlS {
-        cert: heapless::String<200>,
-        key: heapless::String<200>,
+        cert: heapless::String<STRING_CAPACITY>,
+        key: heapless::String<STRING_CAPACITY>,
     },
 }
 
