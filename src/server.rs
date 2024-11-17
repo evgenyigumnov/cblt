@@ -40,7 +40,7 @@ pub struct ServerSettings {
     pub tls_acceptor: Option<Arc<TlsAcceptor>>,
 }
 
-fn tls_acceptor_bulder(
+fn tls_acceptor_builder(
     cert_path: Option<&str>,
     key_path: Option<&str>,
 ) -> Result<Option<Arc<TlsAcceptor>>, CbltError> {
@@ -58,7 +58,7 @@ fn tls_acceptor_bulder(
 }
 impl ServerWorker {
     pub fn new(server: Server) -> Result<Self, CbltError> {
-        let tls_acceptor = tls_acceptor_bulder(server.cert.as_deref(), server.key.as_deref())?;
+        let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
         Ok(ServerWorker {
             port: server.port,
             settings: Arc::new(RwLock::new(ServerSettings {
@@ -124,7 +124,7 @@ impl ServerWorker {
     ) -> Result<(), CbltError> {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
-        let tls_acceptor = tls_acceptor_bulder(cert_path_opt, key_path_opt)?;
+        let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
 
         let mut settings = self.settings.write().await;
         settings.hosts = hosts;
