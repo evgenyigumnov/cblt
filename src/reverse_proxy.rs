@@ -2,7 +2,7 @@ use crate::response::send_response_stream;
 use crate::{matches_pattern, CbltError};
 use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
-use log::{debug, error};
+use log::debug;
 use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;

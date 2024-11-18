@@ -9,7 +9,7 @@ use crate::{file_server, matches_pattern, reverse_proxy};
 use bytes::BytesMut;
 use heapless::FnvIndexMap;
 use http::{Response, StatusCode};
-use log::{debug, info};
+use log::{debug, error};
 use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
@@ -35,7 +35,8 @@ where
             match ret {
                 Ok(()) => {}
                 Err(err) => {
-                    info!("Error: {}", err);
+                    #[cfg(debug_assertions)]
+                    error!("Error: {}", err);
                     return Err(err);
                 }
             }

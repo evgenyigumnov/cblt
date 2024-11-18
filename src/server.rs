@@ -96,6 +96,7 @@ impl ServerWorker {
                         if let Err(err) =
                             directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                         {
+                            #[cfg(debug_assertions)]
                             error!("Error: {}", err);
                         }
                     }
@@ -104,10 +105,12 @@ impl ServerWorker {
                             if let Err(err) =
                                 directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                             {
+                                #[cfg(debug_assertions)]
                                 error!("Error: {}", err);
                             }
                         }
                         Err(err) => {
+                            #[cfg(debug_assertions)]
                             error!("TLS Error: {}", err);
                         }
                     },

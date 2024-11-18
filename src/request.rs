@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;
-use log::debug;
+use log::error;
 use std::str;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
@@ -48,9 +48,9 @@ where
                 // Need to read more data
                 continue;
             }
-            Err(_) => {
+            Err(err) => {
                 return Err(CbltError::RequestError {
-                    details: "Bad request".to_string(),
+                    details: err.to_string(),
                     status_code: StatusCode::BAD_REQUEST,
                 });
             }
@@ -74,9 +74,9 @@ where
 {
     let req_str = match str::from_utf8(&buf[..header_len]) {
         Ok(v) => v,
-        Err(_) => {
+        Err(err) => {
             return Err(CbltError::RequestError {
-                details: "Bad request".to_string(),
+                details: err.to_string(),
                 status_code: StatusCode::BAD_REQUEST,
             });
         }
@@ -139,7 +139,11 @@ where
                     .map(|req| (req, content_length_opt)))
             }
         }
-        Ok(Status::Partial) => Ok(None), // Incomplete request
-        Err(_) => Ok(None),              // Parsing failed
+        Ok(Status::Partial) => Ok(None),
+        Err(err) => {
+            #[cfg(debug_assertions)]
+            error!("Error: {}", err);
+            Ok(None)
+        }
     }
 }

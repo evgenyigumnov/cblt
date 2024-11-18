@@ -39,9 +39,9 @@ where
                         send_response_file(socket, response, request).await?;
                         return Ok(StatusCode::OK);
                     }
-                    Err(_) => {
+                    Err(err) => {
                         return Err(CbltError::ResponseError {
-                            details: "Not found".to_string(),
+                            details: err.to_string(),
                             status_code: StatusCode::NOT_FOUND,
                         });
                     }
