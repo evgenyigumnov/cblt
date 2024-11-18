@@ -40,8 +40,8 @@ where
                     }
                 };
 
-                #[cfg(debug_assertions)]
-                debug!("{:?}", request);
+                // #[cfg(debug_assertions)]
+                // debug!("{:?}", request);
                 return Ok(request);
             }
             Ok(Status::Partial) => {
