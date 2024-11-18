@@ -2,7 +2,7 @@ use crate::response::send_response_stream;
 use crate::{matches_pattern, CbltError};
 use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
-use log::debug;
+use log::{debug, error};
 use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::instrument;
@@ -52,9 +52,11 @@ where
                     return Ok(status);
                 }
             }
-            Err(_) => {
+            Err(err) => {
+                #[cfg(debug_assertions)]
+                debug!("Error: {:?}", err);
                 return Err(CbltError::ResponseError {
-                    details: "Bad gateway".to_string(),
+                    details: err.to_string(),
                     status_code: StatusCode::BAD_GATEWAY,
                 });
             }
