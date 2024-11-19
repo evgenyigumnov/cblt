@@ -147,3 +147,40 @@ where
         }
     }
 }
+
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+pub fn parse_range_header(range_header: &str, file_size: u64) -> Result<(u64, u64), CbltError> {
+    // Expected format: "bytes=START-END"
+    if !range_header.starts_with("bytes=") {
+        return Err(CbltError::ResponseError {
+            details: "Invalid Range header".to_string(),
+            status_code: StatusCode::BAD_REQUEST,
+        });
+    }
+
+    let range_values = &range_header[6..]; // Remove "bytes="
+    let parts: Vec<&str> = range_values.split('-').collect();
+    if parts.len() != 2 {
+        return Err(CbltError::ResponseError {
+            details: "Invalid Range header format".to_string(),
+            status_code: StatusCode::BAD_REQUEST,
+        });
+    }
+
+    let start = parts[0].parse::<u64>().ok();
+    let end = parts[1].parse::<u64>().ok();
+
+    let (start, end) = match (start, end) {
+        (Some(s), Some(e)) if s <= e && e < file_size => (s, e),
+        (Some(s), None) if s < file_size => (s, file_size - 1),
+        (None, Some(e)) if e != 0 => (file_size - e, file_size - 1),
+        _ => {
+            return Err(CbltError::ResponseError {
+                details: "Invalid Range header values".to_string(),
+                status_code: StatusCode::RANGE_NOT_SATISFIABLE,
+            });
+        }
+    };
+
+    Ok((start, end))
+}

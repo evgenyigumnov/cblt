@@ -17,6 +17,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - Gzip compression
 - Redirects
 - Reload configuration without downtime
+- Range requests for static files
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
@@ -49,6 +50,7 @@ curl -X POST http://127.0.0.1/api/entry \
 -H "Accept: */*" \
 -H "Content-Type: application/json" \
 -d '{"key":"value"}'
+curl -v -H "Range: bytes=0-499" http://127.0.0.1/logo.png
 ```
 
 ## "Cbltfile" configuration examples

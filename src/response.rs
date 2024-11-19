@@ -5,6 +5,7 @@ use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
 use std::pin;
+use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tracing::instrument;
 
@@ -63,6 +64,29 @@ where
     socket.flush().await?;
 
     Ok(())
+}
+
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+pub async fn ranged_file_response(
+    file: File,
+    file_size: u64,
+    range: (u64, u64),
+) -> Result<Response<File>, CbltError> {
+    let (start, end) = range;
+    let content_length = end - start + 1;
+
+    // Seek to the start position
+    let mut file = file;
+    use tokio::io::AsyncSeekExt;
+    file.seek(std::io::SeekFrom::Start(start)).await?;
+
+    let content_range = format!("bytes {}-{}/{}", start, end, file_size);
+
+    Ok(Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header("Content-Length", content_length)
+        .header("Content-Range", content_range)
+        .body(file)?)
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]

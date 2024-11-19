@@ -1,6 +1,8 @@
 use crate::error::CbltError;
-use crate::response::send_response_file;
+use crate::request::parse_range_header;
+use crate::response::{ranged_file_response, send_response_file};
 use bytes::BytesMut;
+use http::header::RANGE;
 use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
@@ -35,9 +37,27 @@ where
                 match File::open(&file_path).await {
                     Ok(file) => {
                         let content_length = file_size(&file).await?;
-                        let response = file_response(file, content_length)?;
-                        send_response_file(socket, response, request).await?;
-                        return Ok(StatusCode::OK);
+
+                        if let Some(range_header) = request.headers().get(RANGE) {
+                            let range_str =
+                                range_header
+                                    .to_str()
+                                    .map_err(|_| CbltError::ResponseError {
+                                        details: "Invalid Range header".to_string(),
+                                        status_code: StatusCode::BAD_REQUEST,
+                                    })?;
+
+                            let range = parse_range_header(range_str, content_length)?;
+
+                            let response =
+                                ranged_file_response(file, content_length, range).await?;
+                            send_response_file(socket, response, request).await?;
+                            return Ok(StatusCode::PARTIAL_CONTENT);
+                        } else {
+                            let response = file_response(file, content_length)?;
+                            send_response_file(socket, response, request).await?;
+                            return Ok(StatusCode::OK);
+                        }
                     }
                     Err(err) => {
                         return Err(CbltError::ResponseError {
