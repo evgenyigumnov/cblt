@@ -41,7 +41,7 @@ where
                     return Err(err);
                 }
             }
-            return Err(err);
+            Err(err)
         }
         Ok(request) => {
             let host = match request.headers().get("Host") {

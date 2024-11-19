@@ -21,10 +21,10 @@ where
 {
     match root_path {
         None => {
-            return Err(CbltError::ResponseError {
+            Err(CbltError::ResponseError {
                 details: "".to_string(),
                 status_code: StatusCode::INTERNAL_SERVER_ERROR,
-            });
+            })
         }
         Some(root) => {
             if let Some(mut file_path) = sanitize_path(
@@ -53,22 +53,22 @@ where
                             let response =
                                 ranged_file_response(file, content_length, range).await?;
                             send_response_file(socket, response, request).await?;
-                            return Ok(StatusCode::PARTIAL_CONTENT);
+                            Ok(StatusCode::PARTIAL_CONTENT)
                         } else {
                             let response = file_response(file, content_length)?;
                             send_response_file(socket, response, request).await?;
-                            return Ok(StatusCode::OK);
+                            Ok(StatusCode::OK)
                         }
                     }
                     Err(err) => {
-                        return Err(CbltError::ResponseError {
+                        Err(CbltError::ResponseError {
                             details: err.to_string(),
                             status_code: StatusCode::NOT_FOUND,
-                        });
+                        })
                     }
                 }
             } else {
-                return Err(CbltError::DirectiveNotMatched);
+                Err(CbltError::DirectiveNotMatched)
             }
         }
     }

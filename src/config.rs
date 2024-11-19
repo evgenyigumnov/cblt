@@ -59,8 +59,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "root" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args
-                                .get(0)
+                            let pattern = args.first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "pattern absent".to_string(),
                                 })?
@@ -89,8 +88,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "reverse_proxy" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args
-                                .get(0)
+                            let pattern = args.first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "pattern absent".to_string(),
                                 })?
@@ -118,9 +116,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     }
                     "redir" => {
                         let args = get_string_args(child_node);
-                        if args.len() >= 1 {
-                            let destination = args
-                                .get(0)
+                        if !args.is_empty() {
+                            let destination = args.first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "destination absent".to_string(),
                                 })?
@@ -138,8 +135,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "tls" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let cert_path = args
-                                .get(0)
+                            let cert_path = args.first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "cert path absent".to_string(),
                                 })?

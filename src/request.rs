@@ -28,9 +28,9 @@ where
         let mut headers = [httparse::EMPTY_HEADER; HEADER_BUF_SIZE];
         let mut req = httparse::Request::new(&mut headers);
 
-        match req.parse(&buf) {
+        match req.parse(buf) {
             Ok(Status::Complete(header_len)) => {
-                let (request, _) = match parse_request_headers(header_len, &mut buf, socket).await?
+                let (request, _) = match parse_request_headers(header_len, buf, socket).await?
                 {
                     Some((req, content_length)) => (req, content_length),
                     None => {
@@ -58,10 +58,10 @@ where
         }
     }
 
-    return Err(CbltError::ResponseError {
+    Err(CbltError::ResponseError {
         details: "Bad request".to_string(),
         status_code: StatusCode::BAD_REQUEST,
-    });
+    })
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]

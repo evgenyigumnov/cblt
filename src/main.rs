@@ -116,7 +116,7 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
     let doc: KdlDocument = cbltfile_content.parse()?;
     let config = build_config(&doc)?;
 
-    Ok(build_servers(config)?)
+    build_servers(config)
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]

@@ -45,24 +45,24 @@ where
                 let response = response_builder.body("")?;
                 send_response_stream(socket, response, request, &mut stream).await?;
                 if status != StatusCode::OK {
-                    return Err(CbltError::ResponseError {
+                    Err(CbltError::ResponseError {
                         details: "Bad gateway".to_string(),
                         status_code: status,
-                    });
+                    })
                 } else {
-                    return Ok(status);
+                    Ok(status)
                 }
             }
             Err(err) => {
                 #[cfg(debug_assertions)]
                 debug!("Error: {:?}", err);
-                return Err(CbltError::ResponseError {
+                Err(CbltError::ResponseError {
                     details: err.to_string(),
                     status_code: StatusCode::BAD_GATEWAY,
-                });
+                })
             }
         }
     } else {
-        return Err(CbltError::DirectiveNotMatched);
+        Err(CbltError::DirectiveNotMatched)
     }
 }

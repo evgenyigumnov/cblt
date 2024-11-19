@@ -97,10 +97,10 @@ fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
         .get(http::header::ACCEPT_ENCODING)
         .and_then(|value| value.to_str().ok());
 
-    let gzip_supported = accept_encoding
+    
+    accept_encoding
         .map(|encodings| encodings.contains("gzip"))
-        .unwrap_or(false);
-    gzip_supported
+        .unwrap_or(false)
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
