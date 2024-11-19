@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio_rustls::TlsAcceptor;
+#[cfg(feature = "trace")]
 use tracing::instrument;
 
 pub const STRING_CAPACITY: usize = 200;

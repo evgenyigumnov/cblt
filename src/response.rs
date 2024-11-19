@@ -7,6 +7,7 @@ use std::fmt::Debug;
 use std::pin;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+#[cfg(feature = "trace")]
 use tracing::instrument;
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]

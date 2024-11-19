@@ -3,6 +3,7 @@ use crate::server::{STRING_CAPACITY};
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
+#[cfg(feature = "trace")]
 use tracing::instrument;
 
 #[derive(Debug, Clone)]

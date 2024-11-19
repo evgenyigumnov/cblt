@@ -7,6 +7,7 @@ use http::{Request, Response, StatusCode};
 use std::path::{Component, Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::AsyncWrite;
+#[cfg(feature = "trace")]
 use tracing::instrument;
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]

@@ -6,6 +6,7 @@ use httparse::Status;
 use log::error;
 use std::str;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(feature = "trace")]
 use tracing::instrument;
 
 pub const BUF_SIZE: usize = 8192;

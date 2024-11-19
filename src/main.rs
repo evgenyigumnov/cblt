@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::runtime::Builder;
 use tokio::sync::Mutex;
+#[cfg(feature = "trace")]
 use tracing::instrument;
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;

@@ -12,6 +12,7 @@ use http::{Response, StatusCode};
 use log::{debug, error};
 use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(feature = "trace")]
 use tracing::instrument;
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
