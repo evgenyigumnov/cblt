@@ -9,8 +9,6 @@ if [ -z "$GITHUB_TOKEN" ]; then
   exit 1
 fi
 
-
-# Параметры релиза
 TAG_NAME=$1
 RELEASE_NAME=$2
 RELEASE_BODY=$3

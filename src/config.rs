@@ -1,5 +1,5 @@
 use crate::error::CbltError;
-use crate::server::STRING_CAPACITY;
+use crate::server::{STRING_CAPACITY};
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
@@ -15,6 +15,8 @@ pub enum Directive {
     ReverseProxy {
         pattern: heapless::String<STRING_CAPACITY>,
         destination: heapless::String<STRING_CAPACITY>,
+        //         destinations: heapless::Vec<heapless::String<STRING_CAPACITY>, DESTINATION_CAPACITY>,
+        //         lb_policy: LoadBalancePolicy,
     },
     Redir {
         destination: heapless::String<STRING_CAPACITY>,
@@ -24,6 +26,21 @@ pub enum Directive {
         key: heapless::String<STRING_CAPACITY>,
     },
 }
+// #[derive(Debug, Clone)]
+// pub enum LoadBalancePolicy {
+//     None,
+//     RoundRobin {
+//         uri: heapless::String<STRING_CAPACITY>,
+//         interval: u32,
+//         timeout: u32,
+//     },
+//     Cookie {
+//         cookie_name: heapless::String<STRING_CAPACITY>,
+//         cookie_path: heapless::String<STRING_CAPACITY>,
+//         cookie_max_age: u32,
+//     },
+// }
+
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, CbltError> {
