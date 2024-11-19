@@ -249,8 +249,7 @@ fn only_in_production() {
 fn matches_pattern(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         true
-    } else if pattern.ends_with("*") {
-        let prefix = &pattern[..pattern.len() - 1];
+    } else if let Some(prefix) = pattern.strip_suffix("*") {
         path.starts_with(prefix)
     } else {
         pattern == path

@@ -30,8 +30,7 @@ where
 
         match req.parse(buf) {
             Ok(Status::Complete(header_len)) => {
-                let (request, _) = match parse_request_headers(header_len, buf, socket).await?
-                {
+                let (request, _) = match parse_request_headers(header_len, buf, socket).await? {
                     Some((req, content_length)) => (req, content_length),
                     None => {
                         return Err(CbltError::RequestError {

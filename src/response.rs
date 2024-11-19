@@ -97,7 +97,6 @@ fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
         .get(http::header::ACCEPT_ENCODING)
         .and_then(|value| value.to_str().ok());
 
-    
     accept_encoding
         .map(|encodings| encodings.contains("gzip"))
         .unwrap_or(false)

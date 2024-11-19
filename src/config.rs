@@ -1,5 +1,5 @@
 use crate::error::CbltError;
-use crate::server::{STRING_CAPACITY};
+use crate::server::STRING_CAPACITY;
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
@@ -42,7 +42,6 @@ pub enum Directive {
 //     },
 // }
 
-
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, CbltError> {
     let mut hosts = HashMap::new();
@@ -59,7 +58,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "root" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args.first()
+                            let pattern = args
+                                .first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "pattern absent".to_string(),
                                 })?
@@ -88,7 +88,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "reverse_proxy" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args.first()
+                            let pattern = args
+                                .first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "pattern absent".to_string(),
                                 })?
@@ -117,7 +118,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "redir" => {
                         let args = get_string_args(child_node);
                         if !args.is_empty() {
-                            let destination = args.first()
+                            let destination = args
+                                .first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "destination absent".to_string(),
                                 })?
@@ -135,7 +137,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "tls" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let cert_path = args.first()
+                            let cert_path = args
+                                .first()
                                 .ok_or(CbltError::KdlParseError {
                                     details: "cert path absent".to_string(),
                                 })?

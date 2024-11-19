@@ -20,12 +20,10 @@ where
     S: AsyncWrite + Unpin,
 {
     match root_path {
-        None => {
-            Err(CbltError::ResponseError {
-                details: "".to_string(),
-                status_code: StatusCode::INTERNAL_SERVER_ERROR,
-            })
-        }
+        None => Err(CbltError::ResponseError {
+            details: "".to_string(),
+            status_code: StatusCode::INTERNAL_SERVER_ERROR,
+        }),
         Some(root) => {
             if let Some(mut file_path) = sanitize_path(
                 Path::new(root),
@@ -60,12 +58,10 @@ where
                             Ok(StatusCode::OK)
                         }
                     }
-                    Err(err) => {
-                        Err(CbltError::ResponseError {
-                            details: err.to_string(),
-                            status_code: StatusCode::NOT_FOUND,
-                        })
-                    }
+                    Err(err) => Err(CbltError::ResponseError {
+                        details: err.to_string(),
+                        status_code: StatusCode::NOT_FOUND,
+                    }),
                 }
             } else {
                 Err(CbltError::DirectiveNotMatched)
