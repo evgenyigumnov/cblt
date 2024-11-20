@@ -63,7 +63,7 @@ impl ServerWorker {
     }
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub async fn run(&self, max_connections: usize) -> Result<(), CbltError> {
+    pub async fn run(&mut self, max_connections: usize) -> Result<(), CbltError> {
         let semaphore = Arc::new(Semaphore::new(max_connections));
         let addr = format!("0.0.0.0:{}", self.port);
         let listener = TcpListener::bind(&addr).await?;

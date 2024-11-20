@@ -154,7 +154,7 @@ impl ServerSupervisor {
                 worker.update(server.hosts, server.cert, server.key).await?;
                 info!("Server worker updated on port: {}", port);
             } else {
-                if let Ok(server_worker) = ServerWorker::new(server.clone()) {
+                if let Ok(mut server_worker) = ServerWorker::new(server.clone()) {
                     self.workers.get_mut().insert(port, server_worker.clone());
                     let args = args.clone();
                     tokio::spawn(async move {
