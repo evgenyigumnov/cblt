@@ -69,49 +69,62 @@ impl ServerWorker {
         let hosts = self.settings.hosts.clone();
 
         tokio::spawn(async move {
-            let semaphore = Arc::new(Semaphore::new(max_connections));
-            let addr = format!("0.0.0.0:{}", port);
-            let listener = TcpListener::bind(&addr).await.unwrap();
-            info!("Listening on port: {}", port);
-            let client_reqwest = reqwest::Client::new();
+            if let Err(err) = init_server(port, acceptor, hosts, max_connections).await {
+                error!("Error: {}", err);
+            }
+            async fn init_server(
+                port: u16,
+                acceptor: Option<TlsAcceptor>,
+                hosts: HashMap<String, Vec<Directive>>,
+                max_connections: usize,
+            ) -> Result<(), CbltError> {
+                let semaphore = Arc::new(Semaphore::new(max_connections));
+                let addr = format!("0.0.0.0:{}", port);
+                let listener = TcpListener::bind(&addr).await?;
+                info!("Listening on port: {}", port);
+                let client_reqwest = reqwest::Client::new();
 
-            loop {
-                let client_reqwest = client_reqwest.clone();
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let permit = semaphore.clone().acquire_owned().await.unwrap();
-                let acceptor = acceptor.clone();
-                let hosts = hosts.clone();
-                tokio::spawn(async move {
-                    let _permit = permit;
+                loop {
+                    let client_reqwest = client_reqwest.clone();
+                    let (mut stream, _) = listener.accept().await?;
+                    let permit = semaphore.clone().acquire_owned().await?;
+                    let acceptor = acceptor.clone();
+                    let hosts = hosts.clone();
+                    tokio::spawn(async move {
+                        let _permit = permit;
 
-                    match acceptor {
-                        None => {
-                            if let Err(err) =
-                                directive_process(&mut stream, &hosts, client_reqwest.clone()).await
-                            {
-                                #[cfg(debug_assertions)]
-                                error!("Error: {}", err);
-                            }
-                        }
-                        Some(ref acceptor) => match acceptor.accept(stream).await {
-                            Ok(mut stream) => {
+                        match acceptor {
+                            None => {
                                 if let Err(err) =
-                                    directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                                    directive_process(&mut stream, &hosts, client_reqwest.clone())
+                                        .await
                                 {
                                     #[cfg(debug_assertions)]
                                     error!("Error: {}", err);
                                 }
                             }
-                            Err(err) => {
-                                #[cfg(debug_assertions)]
-                                error!("TLS Error: {}", err);
-                            }
-                        },
-                    }
-                });
+                            Some(ref acceptor) => match acceptor.accept(stream).await {
+                                Ok(mut stream) => {
+                                    if let Err(err) = directive_process(
+                                        &mut stream,
+                                        &hosts,
+                                        client_reqwest.clone(),
+                                    )
+                                    .await
+                                    {
+                                        #[cfg(debug_assertions)]
+                                        error!("Error: {}", err);
+                                    }
+                                }
+                                Err(err) => {
+                                    #[cfg(debug_assertions)]
+                                    error!("TLS Error: {}", err);
+                                }
+                            },
+                        }
+                    });
+                }
             }
-
-
         });
         Ok(())
     }
