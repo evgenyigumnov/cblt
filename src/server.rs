@@ -1,46 +1,50 @@
 use crate::config::Directive;
 use crate::directive::directive_process;
 use crate::error::CbltError;
-use heapless::FnvIndexMap;
+use std::collections::HashMap;
+
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
+use tokio::sync::{RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
 
-pub const STRING_CAPACITY: usize = 200;
-pub const DIRECTIVE_CAPACITY: usize = 10;
-pub const HOST_CAPACITY: usize = 8;
-
 #[derive(Debug, Clone)]
 pub struct Server {
     pub port: u16,
-    pub hosts: FnvIndexMap<
-        heapless::String<STRING_CAPACITY>,
-        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
-        HOST_CAPACITY,
-    >, // Host -> Directives
-    pub cert: Option<heapless::String<STRING_CAPACITY>>,
-    pub key: Option<heapless::String<STRING_CAPACITY>>,
+    pub hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
+    pub cert: Option<String>,
+    pub key: Option<String>,
 }
 
 pub struct ServerWorker {
     pub port: u16,
-    pub settings: ServerSettings,
+    pub lock: Arc<SettingsLock>,
+}
+
+pub struct SettingsLock {
+    settings: RwLock<Arc<ServerSettings>>,
+}
+
+impl SettingsLock {
+    async fn update(&self, s: Arc<ServerSettings>) {
+        let mut settings = self.settings.write().await;
+        *settings = s;
+    }
+    async fn get(&self) -> Arc<ServerSettings> {
+        let settings = self.settings.read().await;
+        settings.clone()
+    }
 }
 
 #[derive(Clone)]
 pub struct ServerSettings {
-    pub hosts: FnvIndexMap<
-        heapless::String<STRING_CAPACITY>,
-        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
-        HOST_CAPACITY,
-    >,
-    pub tls_acceptor: Option<TlsAcceptor>,
+    pub hosts: Arc<HashMap<String, Vec<Directive>>>,
+    pub tls_acceptor: Arc<Option<TlsAcceptor>>,
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
@@ -66,34 +70,86 @@ impl ServerWorker {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
         Ok(ServerWorker {
             port: server.port,
-            settings: ServerSettings {
-                hosts: server.hosts,
-                tls_acceptor,
-            },
+            lock: Arc::new(SettingsLock {
+                settings: RwLock::new(
+                    ServerSettings {
+                        hosts: server.hosts.into(),
+                        tls_acceptor: tls_acceptor.into(),
+                    }
+                    .into(),
+                ),
+            }),
         })
     }
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn run(&self, max_connections: usize) -> Result<(), CbltError> {
-        let semaphore = Arc::new(Semaphore::new(max_connections));
-        let addr = format!("0.0.0.0:{}", self.port);
-        let listener = TcpListener::bind(&addr).await?;
-        info!("Listening on port: {}", self.port);
-        let client_reqwest = reqwest::Client::new();
+        let port = self.port;
+        let settings = self.lock.clone();
 
-        loop {
-            let client_reqwest = client_reqwest.clone();
-            let server_clone = self.clone();
-            let (mut stream, _) = listener.accept().await?;
-            let permit = semaphore.clone().acquire_owned().await?;
+        tokio::spawn(async move {
+            if let Err(err) = init_server(port, settings, max_connections).await {
+                error!("Error: {}", err);
+            }
+        });
+        Ok(())
+    }
 
-            tokio::spawn(async move {
-                let _permit = permit;
-                let acceptor = server_clone.settings.tls_acceptor.clone();
-                let hosts = server_clone.settings.hosts.clone();
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+    pub async fn update(
+        &self,
+        hosts: HashMap<String, Vec<Directive>>,
+        cert_path: Option<String>,
+        key_path: Option<String>,
+    ) -> Result<(), CbltError> {
+        let cert_path_opt = cert_path.as_deref();
+        let key_path_opt = key_path.as_deref();
+        let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
+        self.lock
+            .update(
+                ServerSettings {
+                    hosts: hosts.into(),
+                    tls_acceptor: tls_acceptor.into(),
+                }
+                .into(),
+            )
+            .await;
+        Ok(())
+    }
+}
 
-                match acceptor {
-                    None => {
+async fn init_server(
+    port: u16,
+    settings_lock: Arc<SettingsLock>,
+    max_connections: usize,
+) -> Result<(), CbltError> {
+    let semaphore = Arc::new(Semaphore::new(max_connections));
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = TcpListener::bind(&addr).await?;
+    info!("Listening on port: {}", port);
+    let client_reqwest = reqwest::Client::new();
+
+    loop {
+        let client_reqwest = client_reqwest.clone();
+        let (mut stream, _) = listener.accept().await?;
+        let permit = semaphore.clone().acquire_owned().await?;
+        let settings = settings_lock.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            let settings = settings.get().await;
+            let hosts = settings.hosts.clone();
+            let acceptor = settings.tls_acceptor.clone();
+            match acceptor.as_ref() {
+                None => {
+                    if let Err(err) =
+                        directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                    {
+                        #[cfg(debug_assertions)]
+                        error!("Error: {}", err);
+                    }
+                }
+                Some(ref acceptor) => match acceptor.accept(stream).await {
+                    Ok(mut stream) => {
                         if let Err(err) =
                             directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                         {
@@ -101,51 +157,12 @@ impl ServerWorker {
                             error!("Error: {}", err);
                         }
                     }
-                    Some(ref acceptor) => match acceptor.accept(stream).await {
-                        Ok(mut stream) => {
-                            if let Err(err) =
-                                directive_process(&mut stream, &hosts, client_reqwest.clone()).await
-                            {
-                                #[cfg(debug_assertions)]
-                                error!("Error: {}", err);
-                            }
-                        }
-                        Err(err) => {
-                            #[cfg(debug_assertions)]
-                            error!("TLS Error: {}", err);
-                        }
-                    },
-                }
-            });
-        }
-    }
-
-    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub async fn update(
-        &mut self,
-        hosts: FnvIndexMap<
-            heapless::String<STRING_CAPACITY>,
-            heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
-            HOST_CAPACITY,
-        >,
-        cert_path: Option<heapless::String<STRING_CAPACITY>>,
-        key_path: Option<heapless::String<STRING_CAPACITY>>,
-    ) -> Result<(), CbltError> {
-        let cert_path_opt = cert_path.as_deref();
-        let key_path_opt = key_path.as_deref();
-        let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
-
-        self.settings.hosts = hosts;
-        self.settings.tls_acceptor = tls_acceptor;
-        Ok(())
-    }
-}
-
-impl Clone for ServerWorker {
-    fn clone(&self) -> Self {
-        ServerWorker {
-            port: self.port,
-            settings: self.settings.clone(),
-        }
+                    Err(err) => {
+                        #[cfg(debug_assertions)]
+                        error!("TLS Error: {}", err);
+                    }
+                },
+            }
+        });
     }
 }

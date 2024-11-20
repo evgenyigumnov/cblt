@@ -2,7 +2,6 @@ use crate::config::{build_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
 use clap::Parser;
-use heapless::FnvIndexMap;
 use kdl::KdlDocument;
 use log::{debug, error, info};
 use std::collections::hash_map::Entry;
@@ -12,7 +11,6 @@ use std::str;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::runtime::Builder;
-use tokio::sync::Mutex;
 #[cfg(feature = "trace")]
 use tracing::instrument;
 use tracing::Level;
@@ -81,23 +79,54 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
 
     debug!("{:#?}", servers);
-    let server_workers: Arc<Mutex<HashMap<u16, ServerWorker>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    use tokio::sync::watch;
 
-    process_workers(args.clone(), server_workers.clone(), servers.clone()).await?;
+    let (tx, mut rx) = watch::channel(servers);
+
+    let args_clone = args.clone();
+    tokio::spawn(async move {
+        let mut sever_supervisor = ServerSupervisor {
+            workers: HashMap::new(),
+        };
+
+        loop {
+            {
+                let servers = rx.borrow_and_update().clone();
+                if let Err(err) = &sever_supervisor
+                    .process_workers(args_clone.clone(), servers)
+                    .await
+                {
+                    error!("Error: {}", err);
+                    std::process::exit(0);
+                }
+            }
+
+            if rx.changed().await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let args = args.clone();
 
     tokio::spawn(async move {
         let reload_file_path = Path::new("reload");
 
         loop {
             if reload_file_path.exists() {
-                let servers = load_servers_from_config(args.clone()).await.unwrap();
-                if let Err(err) =
-                    process_workers(args.clone(), server_workers.clone(), servers).await
-                {
-                    error!("Error: {}", err);
+                match load_servers_from_config(args.clone()).await {
+                    Ok(servers) => {
+                        if let Err(err) = tx.send(servers) {
+                            error!("Error: {}", err);
+                        }
+                        if let Err(err) = std::fs::remove_file(reload_file_path) {
+                            error!("Error: {}", err);
+                        }
+                    }
+                    Err(err) => {
+                        error!("Error: {}", err);
+                    }
                 }
-                std::fs::remove_file(reload_file_path).unwrap();
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
@@ -119,36 +148,35 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
     build_servers(config)
 }
 
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-async fn process_workers(
-    args: Arc<Args>,
-    workers: Arc<Mutex<HashMap<u16, ServerWorker>>>,
-    servers: HashMap<u16, Server>,
-) -> Result<(), CbltError> {
-    for (port, server) in servers {
-        if let Some(worker) = workers.lock().await.get_mut(&port) {
-            worker.update(server.hosts, server.cert, server.key).await?;
-            info!("Server worker updated on port: {}", port);
-        } else {
-            let server_workers = workers.clone();
-            let args = args.clone();
-            tokio::spawn(async move {
+pub struct ServerSupervisor {
+    workers: HashMap<u16, ServerWorker>,
+}
+
+impl ServerSupervisor {
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+    async fn process_workers(
+        &mut self,
+        args: Arc<Args>,
+        servers: HashMap<u16, Server>,
+    ) -> Result<(), CbltError> {
+        for (port, server) in servers {
+            if let Some(worker) = self.workers.get_mut(&port) {
+                worker.update(server.hosts, server.cert, server.key).await?;
+                info!("Server worker updated on port: {}", port);
+            } else {
                 if let Ok(server_worker) = ServerWorker::new(server.clone()) {
-                    server_workers
-                        .lock()
-                        .await
-                        .insert(port, server_worker.clone());
                     if let Err(err) = server_worker.run(args.max_connections).await {
                         error!("Error: {}", err);
                     }
+                    self.workers.insert(port, server_worker);
                 } else {
                     error!("Error creating server worker");
                 }
-            });
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
@@ -172,19 +200,13 @@ fn build_servers(
         let port = parsed_host.port.unwrap_or(port);
         debug!("Host: {}, Port: {}", host, port);
         let cert_path = if let Some(path) = cert_path {
-            Some(
-                heapless::String::try_from(path.as_str())
-                    .map_err(|_| CbltError::HeapLessError {})?,
-            )
+            Some(path)
         } else {
             None
         };
 
         let key_path = if let Some(path) = key_path {
-            Some(
-                heapless::String::try_from(path.as_str())
-                    .map_err(|_| CbltError::HeapLessError {})?,
-            )
+            Some(path)
         } else {
             None
         };
@@ -192,30 +214,15 @@ fn build_servers(
         match servers.entry(port) {
             Entry::Occupied(mut server) => {
                 let hosts = &mut server.get_mut().hosts;
-                let directives_slice = directives.as_slice();
-                hosts
-                    .insert(
-                        heapless::String::try_from(host.as_str())
-                            .map_err(|_| CbltError::HeapLessError {})?,
-                        heapless::Vec::try_from(directives_slice)
-                            .map_err(|_| CbltError::HeapLessError {})?,
-                    )
-                    .map_err(|_| CbltError::HeapLessError {})?;
+                hosts.insert(host, directives);
                 server.get_mut().cert = cert_path.clone();
                 server.get_mut().key = key_path.clone();
             }
             Entry::Vacant(new_server) => {
-                let mut hosts = FnvIndexMap::new();
+                let mut hosts = HashMap::new();
                 let host = parsed_host.host;
-                let directives_slice = directives.as_slice();
-                hosts
-                    .insert(
-                        heapless::String::try_from(host.as_str())
-                            .map_err(|_| CbltError::HeapLessError {})?,
-                        heapless::Vec::try_from(directives_slice)
-                            .map_err(|_| CbltError::HeapLessError {})?,
-                    )
-                    .map_err(|_| CbltError::HeapLessError {})?;
+                hosts.insert(host, directives);
+
                 new_server.insert(Server {
                     port,
                     hosts,

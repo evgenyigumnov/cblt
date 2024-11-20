@@ -1,5 +1,4 @@
 use crate::error::CbltError;
-use crate::server::STRING_CAPACITY;
 use kdl::KdlDocument;
 use log::debug;
 use std::collections::HashMap;
@@ -9,35 +8,35 @@ use tracing::instrument;
 #[derive(Debug, Clone)]
 pub enum Directive {
     Root {
-        pattern: heapless::String<STRING_CAPACITY>,
-        path: heapless::String<STRING_CAPACITY>,
+        pattern: String,
+        path: String,
     },
     FileServer,
     ReverseProxy {
-        pattern: heapless::String<STRING_CAPACITY>,
-        destination: heapless::String<STRING_CAPACITY>,
-        //         destinations: heapless::Vec<heapless::String<STRING_CAPACITY>, DESTINATION_CAPACITY>,
+        pattern: String,
+        destination: String,
+        //         destinations: Vec<String, DESTINATION_CAPACITY>,
         //         lb_policy: LoadBalancePolicy,
     },
     Redir {
-        destination: heapless::String<STRING_CAPACITY>,
+        destination: String,
     },
     TlS {
-        cert: heapless::String<STRING_CAPACITY>,
-        key: heapless::String<STRING_CAPACITY>,
+        cert: String,
+        key: String,
     },
 }
 // #[derive(Debug, Clone)]
 // pub enum LoadBalancePolicy {
 //     None,
 //     RoundRobin {
-//         uri: heapless::String<STRING_CAPACITY>,
+//         uri: String,
 //         interval: u32,
 //         timeout: u32,
 //     },
 //     Cookie {
-//         cookie_name: heapless::String<STRING_CAPACITY>,
-//         cookie_path: heapless::String<STRING_CAPACITY>,
+//         cookie_name: String,
+//         cookie_path: String,
 //         cookie_max_age: u32,
 //     },
 // }
@@ -71,10 +70,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                                 })?
                                 .to_string();
                             directives.push(Directive::Root {
-                                pattern: heapless::String::try_from(pattern.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
-                                path: heapless::String::try_from(path.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                pattern: pattern,
+                                path: path,
                             });
                         } else {
                             return Err(CbltError::KdlParseError {
@@ -101,10 +98,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                                 })?
                                 .to_string();
                             directives.push(Directive::ReverseProxy {
-                                pattern: heapless::String::try_from(pattern.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
-                                destination: heapless::String::try_from(destination.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                pattern: pattern,
+                                destination: destination,
                             });
                         } else {
                             return Err(CbltError::KdlParseError {
@@ -125,8 +120,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                                 })?
                                 .to_string();
                             directives.push(Directive::Redir {
-                                destination: heapless::String::try_from(destination.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                destination: destination,
                             });
                         } else {
                             return Err(CbltError::KdlParseError {
@@ -150,10 +144,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                                 })?
                                 .to_string();
                             directives.push(Directive::TlS {
-                                cert: heapless::String::try_from(cert_path.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
-                                key: heapless::String::try_from(key_path.as_str())
-                                    .map_err(|_| CbltError::HeapLessError {})?,
+                                cert: cert_path,
+                                key: key_path,
                             });
                         } else {
                             return Err(CbltError::KdlParseError {

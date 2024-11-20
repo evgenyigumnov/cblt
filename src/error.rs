@@ -65,6 +65,6 @@ pub enum CbltError {
     },
     #[error("KdlParseError: {details:?}")]
     KdlParseError { details: String },
-    #[error("HeapLessError")]
-    HeapLessError,
+    #[error("HeaplessError")]
+    HeaplessError,
 }
