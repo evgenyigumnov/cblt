@@ -174,7 +174,7 @@ fn build_servers(
         let cert_path = if let Some(path) = cert_path {
             Some(
                 heapless::String::try_from(path.as_str())
-                    .map_err(|_| CbltError::HeapLessError {})?,
+                    .map_err(|_| CbltError::HeaplessError {})?,
             )
         } else {
             None
@@ -183,7 +183,7 @@ fn build_servers(
         let key_path = if let Some(path) = key_path {
             Some(
                 heapless::String::try_from(path.as_str())
-                    .map_err(|_| CbltError::HeapLessError {})?,
+                    .map_err(|_| CbltError::HeaplessError {})?,
             )
         } else {
             None
@@ -196,11 +196,11 @@ fn build_servers(
                 hosts
                     .insert(
                         heapless::String::try_from(host.as_str())
-                            .map_err(|_| CbltError::HeapLessError {})?,
+                            .map_err(|_| CbltError::HeaplessError {})?,
                         heapless::Vec::try_from(directives_slice)
-                            .map_err(|_| CbltError::HeapLessError {})?,
+                            .map_err(|_| CbltError::HeaplessError {})?,
                     )
-                    .map_err(|_| CbltError::HeapLessError {})?;
+                    .map_err(|_| CbltError::HeaplessError {})?;
                 server.get_mut().cert = cert_path.clone();
                 server.get_mut().key = key_path.clone();
             }
@@ -211,11 +211,11 @@ fn build_servers(
                 hosts
                     .insert(
                         heapless::String::try_from(host.as_str())
-                            .map_err(|_| CbltError::HeapLessError {})?,
+                            .map_err(|_| CbltError::HeaplessError {})?,
                         heapless::Vec::try_from(directives_slice)
-                            .map_err(|_| CbltError::HeapLessError {})?,
+                            .map_err(|_| CbltError::HeaplessError {})?,
                     )
-                    .map_err(|_| CbltError::HeapLessError {})?;
+                    .map_err(|_| CbltError::HeaplessError {})?;
                 new_server.insert(Server {
                     port,
                     hosts,

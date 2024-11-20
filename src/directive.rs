@@ -55,7 +55,7 @@ where
                 None => {
                     let host_str: heapless::String<STRING_CAPACITY> =
                         heapless::String::try_from(host)
-                            .map_err(|_| CbltError::HeapLessError {})?;
+                            .map_err(|_| CbltError::HeaplessError {})?;
                     let host_config = match hosts.get(&host_str) {
                         Some(cfg) => cfg,
                         None => {

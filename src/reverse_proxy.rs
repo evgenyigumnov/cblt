@@ -20,11 +20,15 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     if matches_pattern(pattern, request.uri().path()) {
-        let dest_uri = [destination, request.uri().path()].concat();
+        //let dest_uri = [destination, request.uri().path()].concat();
+        let mut dest_uri: heapless::String<200> = heapless::String::new();
+        dest_uri.push_str(destination).map_err(|_| CbltError::HeaplessError {})?;
+        dest_uri.push_str(request.uri().path()).map_err(|_| CbltError::HeaplessError {})?;
+
         #[cfg(debug_assertions)]
         debug!("Destination URI: {}", dest_uri);
 
-        let mut req_builder = client_reqwest.request(request.method().clone(), dest_uri);
+        let mut req_builder = client_reqwest.request(request.method().clone(), dest_uri.as_str());
         for (key, value) in request.headers().iter() {
             req_builder = req_builder.header(key, value);
         }
