@@ -116,15 +116,15 @@ where
                     }
                     Directive::ReverseProxy {
                         pattern,
-                        destination,
+                        destinations, options,
                     } => {
                         #[cfg(debug_assertions)]
-                        debug!("Reverse proxy: {} -> {}", pattern, destination);
+                        debug!("Reverse proxy: {} -> {:?}", pattern, destinations);
                         match reverse_proxy::proxy_directive(
                             &request,
                             socket,
                             pattern,
-                            destination,
+                            destinations.first().unwrap(),
                             client_reqwest.clone(),
                         )
                         .await
