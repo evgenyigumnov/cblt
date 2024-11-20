@@ -3,7 +3,7 @@ use crate::directive::directive_process;
 use crate::error::CbltError;
 use std::collections::HashMap;
 
-use log::{debug, error, info};
+use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::Arc;

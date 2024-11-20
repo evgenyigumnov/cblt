@@ -11,7 +11,6 @@ use std::str;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::runtime::Builder;
-use tokio::sync::RwLock;
 #[cfg(feature = "trace")]
 use tracing::instrument;
 use tracing::Level;
@@ -87,7 +86,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let args_clone = args.clone();
     tokio::spawn(async move {
         let mut sever_supervisor = ServerSupervisor {
-            workers: RwLock::new(HashMap::new()),
+            workers: HashMap::new(),
         };
 
         loop {
@@ -139,7 +138,7 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
 }
 
 pub struct ServerSupervisor {
-    workers: RwLock<HashMap<u16, ServerWorker>>,
+    workers: HashMap<u16, ServerWorker>,
 }
 
 impl ServerSupervisor {
@@ -150,7 +149,7 @@ impl ServerSupervisor {
         servers: HashMap<u16, Server>,
     ) -> Result<(), CbltError> {
         for (port, server) in servers {
-            if let Some(worker) = self.workers.get_mut().get_mut(&port) {
+            if let Some(worker) = self.workers.get_mut(&port) {
                 worker.update(server.hosts, server.cert, server.key).await?;
                 info!("Server worker updated on port: {}", port);
             } else {
@@ -158,7 +157,7 @@ impl ServerSupervisor {
                     if let Err(err) = server_worker.run(args.max_connections).await {
                         error!("Error: {}", err);
                     }
-                    self.workers.get_mut().insert(port, server_worker);
+                    self.workers.insert(port, server_worker);
                 } else {
                     error!("Error creating server worker");
                 }
