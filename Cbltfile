@@ -1,5 +1,5 @@
 "*:80" {
-    reverse_proxy "/http/*" "http://127.0.0.1:9000"
+//    reverse_proxy "/http/*" "http://127.0.0.1:9000"
     root "*" "./assets"
     file_server
 }
