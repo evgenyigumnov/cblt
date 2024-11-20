@@ -11,7 +11,7 @@ use std::str;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::runtime::Builder;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 #[cfg(feature = "trace")]
 use tracing::instrument;
 use tracing::Level;
@@ -80,10 +80,32 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
 
     debug!("{:#?}", servers);
-    let server_workers: Arc<Mutex<HashMap<u16, ServerWorker>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    use tokio::sync::watch;
 
-    process_workers(args.clone(), server_workers.clone(), servers.clone()).await?;
+    let (tx, mut rx) = watch::channel(servers);
+
+    let args_clone = args.clone();
+    tokio::spawn(async move {
+        let mut sever_supervisor = ServerSupervisor {
+            workers: RwLock::new(HashMap::new()),
+        };
+
+        loop {
+            {
+                let servers = rx.borrow_and_update().clone();
+                let _ = &sever_supervisor
+                    .process_workers(args_clone.clone(), servers)
+                    .await
+                    .unwrap();
+            }
+
+            if rx.changed().await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let args = args.clone();
 
     tokio::spawn(async move {
         let reload_file_path = Path::new("reload");
@@ -91,9 +113,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
         loop {
             if reload_file_path.exists() {
                 let servers = load_servers_from_config(args.clone()).await.unwrap();
-                if let Err(err) =
-                    process_workers(args.clone(), server_workers.clone(), servers).await
-                {
+                if let Err(err) = tx.send(servers) {
                     error!("Error: {}", err);
                 }
                 std::fs::remove_file(reload_file_path).unwrap();
@@ -118,36 +138,38 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
     build_servers(config)
 }
 
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-async fn process_workers(
-    args: Arc<Args>,
-    workers: Arc<Mutex<HashMap<u16, ServerWorker>>>,
-    servers: HashMap<u16, Server>,
-) -> Result<(), CbltError> {
-    for (port, server) in servers {
-        if let Some(worker) = workers.lock().await.get_mut(&port) {
-            worker.update(server.hosts, server.cert, server.key).await?;
-            info!("Server worker updated on port: {}", port);
-        } else {
-            let server_workers = workers.clone();
-            let args = args.clone();
-            tokio::spawn(async move {
+pub struct ServerSupervisor {
+    workers: RwLock<HashMap<u16, ServerWorker>>,
+}
+
+impl ServerSupervisor {
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+    async fn process_workers(
+        &mut self,
+        args: Arc<Args>,
+        servers: HashMap<u16, Server>,
+    ) -> Result<(), CbltError> {
+        for (port, server) in servers {
+            if let Some(worker) = self.workers.get_mut().get_mut(&port) {
+                worker.update(server.hosts, server.cert, server.key).await?;
+                info!("Server worker updated on port: {}", port);
+            } else {
                 if let Ok(server_worker) = ServerWorker::new(server.clone()) {
-                    server_workers
-                        .lock()
-                        .await
-                        .insert(port, server_worker.clone());
-                    if let Err(err) = server_worker.run(args.max_connections).await {
-                        error!("Error: {}", err);
-                    }
+                    self.workers.get_mut().insert(port, server_worker.clone());
+                    let args = args.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = server_worker.run(args.max_connections).await {
+                            error!("Error: {}", err);
+                        }
+                    });
                 } else {
                     error!("Error creating server worker");
                 }
-            });
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
