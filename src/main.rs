@@ -155,13 +155,10 @@ impl ServerSupervisor {
                 info!("Server worker updated on port: {}", port);
             } else {
                 if let Ok(mut server_worker) = ServerWorker::new(server.clone()) {
-                    self.workers.get_mut().insert(port, server_worker.clone());
-                    let args = args.clone();
-                    tokio::spawn(async move {
-                        if let Err(err) = server_worker.run(args.max_connections).await {
-                            error!("Error: {}", err);
-                        }
-                    });
+                    if let Err(err) = server_worker.run(args.max_connections).await {
+                        error!("Error: {}", err);
+                    }
+                    self.workers.get_mut().insert(port, server_worker);
                 } else {
                     error!("Error creating server worker");
                 }

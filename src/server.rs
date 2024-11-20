@@ -63,35 +63,29 @@ impl ServerWorker {
     }
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub async fn run(&mut self, max_connections: usize) -> Result<(), CbltError> {
-        let semaphore = Arc::new(Semaphore::new(max_connections));
-        let addr = format!("0.0.0.0:{}", self.port);
-        let listener = TcpListener::bind(&addr).await?;
-        info!("Listening on port: {}", self.port);
-        let client_reqwest = reqwest::Client::new();
+    pub async fn run(&self, max_connections: usize) -> Result<(), CbltError> {
+        let port = self.port;
+        let acceptor = self.settings.tls_acceptor.clone();
+        let hosts = self.settings.hosts.clone();
 
-        loop {
-            let client_reqwest = client_reqwest.clone();
-            let server_clone = self.clone();
-            let (mut stream, _) = listener.accept().await?;
-            let permit = semaphore.clone().acquire_owned().await?;
+        tokio::spawn(async move {
+            let semaphore = Arc::new(Semaphore::new(max_connections));
+            let addr = format!("0.0.0.0:{}", port);
+            let listener = TcpListener::bind(&addr).await.unwrap();
+            info!("Listening on port: {}", port);
+            let client_reqwest = reqwest::Client::new();
 
-            tokio::spawn(async move {
-                let _permit = permit;
-                let acceptor = server_clone.settings.tls_acceptor.clone();
-                let hosts = server_clone.settings.hosts.clone();
+            loop {
+                let client_reqwest = client_reqwest.clone();
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let permit = semaphore.clone().acquire_owned().await.unwrap();
+                let acceptor = acceptor.clone();
+                let hosts = hosts.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
 
-                match acceptor {
-                    None => {
-                        if let Err(err) =
-                            directive_process(&mut stream, &hosts, client_reqwest.clone()).await
-                        {
-                            #[cfg(debug_assertions)]
-                            error!("Error: {}", err);
-                        }
-                    }
-                    Some(ref acceptor) => match acceptor.accept(stream).await {
-                        Ok(mut stream) => {
+                    match acceptor {
+                        None => {
                             if let Err(err) =
                                 directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                             {
@@ -99,14 +93,27 @@ impl ServerWorker {
                                 error!("Error: {}", err);
                             }
                         }
-                        Err(err) => {
-                            #[cfg(debug_assertions)]
-                            error!("TLS Error: {}", err);
-                        }
-                    },
-                }
-            });
-        }
+                        Some(ref acceptor) => match acceptor.accept(stream).await {
+                            Ok(mut stream) => {
+                                if let Err(err) =
+                                    directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                                {
+                                    #[cfg(debug_assertions)]
+                                    error!("Error: {}", err);
+                                }
+                            }
+                            Err(err) => {
+                                #[cfg(debug_assertions)]
+                                error!("TLS Error: {}", err);
+                            }
+                        },
+                    }
+                });
+            }
+
+
+        });
+        Ok(())
     }
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
