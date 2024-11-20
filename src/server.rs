@@ -23,13 +23,13 @@ pub struct Server {
 
 pub struct ServerWorker {
     pub port: u16,
-    pub settings: ServerSettings,
+    pub settings: Arc<ServerSettings>,
 }
 
 #[derive(Clone)]
 pub struct ServerSettings {
-    pub hosts: HashMap<String, Vec<Directive>>,
-    pub tls_acceptor: Option<TlsAcceptor>,
+    pub hosts: Arc<HashMap<String, Vec<Directive>>>,
+    pub tls_acceptor: Arc<Option<TlsAcceptor>>,
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
@@ -56,9 +56,9 @@ impl ServerWorker {
         Ok(ServerWorker {
             port: server.port,
             settings: ServerSettings {
-                hosts: server.hosts,
-                tls_acceptor,
-            },
+                hosts: server.hosts.into(),
+                tls_acceptor: tls_acceptor.into(),
+            }.into(),
         })
     }
 
@@ -86,17 +86,19 @@ impl ServerWorker {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
-
-        self.settings.hosts = hosts;
-        self.settings.tls_acceptor = tls_acceptor;
+        let settings = Arc::new(ServerSettings {
+            hosts: hosts.into(),
+            tls_acceptor: tls_acceptor.into(),
+        });
+        self.settings = settings;
         Ok(())
     }
 }
 
 async fn init_server(
     port: u16,
-    acceptor: Option<TlsAcceptor>,
-    hosts: HashMap<String, Vec<Directive>>,
+    acceptor: Arc<Option<TlsAcceptor>>,
+    hosts: Arc<HashMap<String, Vec<Directive>>>,
     max_connections: usize,
 ) -> Result<(), CbltError> {
     let semaphore = Arc::new(Semaphore::new(max_connections));
@@ -114,7 +116,7 @@ async fn init_server(
         tokio::spawn(async move {
             let _permit = permit;
 
-            match acceptor {
+            match acceptor.as_ref() {
                 None => {
                     if let Err(err) =
                         directive_process(&mut stream, &hosts, client_reqwest.clone())
