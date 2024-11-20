@@ -3,12 +3,12 @@ use crate::directive::directive_process;
 use crate::error::CbltError;
 use std::collections::HashMap;
 
-use log::{error, info};
+use log::{debug, error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
+use tokio::sync::{RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -23,7 +23,22 @@ pub struct Server {
 
 pub struct ServerWorker {
     pub port: u16,
-    pub settings: Arc<ServerSettings>,
+    pub lock: Arc<SettingsLock>,
+}
+
+pub struct SettingsLock {
+    settings: RwLock<Arc<ServerSettings>>,
+}
+
+impl SettingsLock {
+    async fn update(&self, s: Arc<ServerSettings>) {
+        let mut settings = self.settings.write().await;
+        *settings = s;
+    }
+    async fn get(&self) -> Arc<ServerSettings> {
+        let settings = self.settings.read().await;
+        settings.clone()
+    }
 }
 
 #[derive(Clone)]
@@ -55,21 +70,25 @@ impl ServerWorker {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
         Ok(ServerWorker {
             port: server.port,
-            settings: ServerSettings {
-                hosts: server.hosts.into(),
-                tls_acceptor: tls_acceptor.into(),
-            }.into(),
+            lock: Arc::new(SettingsLock {
+                settings: RwLock::new(
+                    ServerSettings {
+                        hosts: server.hosts.into(),
+                        tls_acceptor: tls_acceptor.into(),
+                    }
+                    .into(),
+                ),
+            }),
         })
     }
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn run(&self, max_connections: usize) -> Result<(), CbltError> {
         let port = self.port;
-        let acceptor = self.settings.tls_acceptor.clone();
-        let hosts = self.settings.hosts.clone();
+        let settings = self.lock.clone();
 
         tokio::spawn(async move {
-            if let Err(err) = init_server(port, acceptor, hosts, max_connections).await {
+            if let Err(err) = init_server(port, settings, max_connections).await {
                 error!("Error: {}", err);
             }
         });
@@ -78,7 +97,7 @@ impl ServerWorker {
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn update(
-        &mut self,
+        &self,
         hosts: HashMap<String, Vec<Directive>>,
         cert_path: Option<String>,
         key_path: Option<String>,
@@ -86,19 +105,25 @@ impl ServerWorker {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
-        let settings = Arc::new(ServerSettings {
-            hosts: hosts.into(),
-            tls_acceptor: tls_acceptor.into(),
-        });
-        self.settings = settings;
+        debug!("Updating server worker on port: {}", self.port);
+        self.lock
+            .update(
+                ServerSettings {
+                    hosts: hosts.into(),
+                    tls_acceptor: tls_acceptor.into(),
+                }
+                .into(),
+            )
+            .await;
+
+        debug!("Updating server worker on port: {}", self.port);
         Ok(())
     }
 }
 
 async fn init_server(
     port: u16,
-    acceptor: Arc<Option<TlsAcceptor>>,
-    hosts: Arc<HashMap<String, Vec<Directive>>>,
+    settings_lock: Arc<SettingsLock>,
     max_connections: usize,
 ) -> Result<(), CbltError> {
     let semaphore = Arc::new(Semaphore::new(max_connections));
@@ -111,16 +136,16 @@ async fn init_server(
         let client_reqwest = client_reqwest.clone();
         let (mut stream, _) = listener.accept().await?;
         let permit = semaphore.clone().acquire_owned().await?;
-        let acceptor = acceptor.clone();
-        let hosts = hosts.clone();
+        let settings = settings_lock.clone();
         tokio::spawn(async move {
             let _permit = permit;
-
+            let settings = settings.get().await;
+            let hosts = settings.hosts.clone();
+            let acceptor = settings.tls_acceptor.clone();
             match acceptor.as_ref() {
                 None => {
                     if let Err(err) =
-                        directive_process(&mut stream, &hosts, client_reqwest.clone())
-                            .await
+                        directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                     {
                         #[cfg(debug_assertions)]
                         error!("Error: {}", err);
@@ -128,12 +153,8 @@ async fn init_server(
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        if let Err(err) = directive_process(
-                            &mut stream,
-                            &hosts,
-                            client_reqwest.clone(),
-                        )
-                            .await
+                        if let Err(err) =
+                            directive_process(&mut stream, &hosts, client_reqwest.clone()).await
                         {
                             #[cfg(debug_assertions)]
                             error!("Error: {}", err);
