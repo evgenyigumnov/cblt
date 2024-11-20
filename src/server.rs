@@ -105,7 +105,6 @@ impl ServerWorker {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
-        debug!("Updating server worker on port: {}", self.port);
         self.lock
             .update(
                 ServerSettings {
@@ -115,8 +114,6 @@ impl ServerWorker {
                 .into(),
             )
             .await;
-
-        debug!("Updating server worker on port: {}", self.port);
         Ok(())
     }
 }
