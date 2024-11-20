@@ -22,8 +22,12 @@ where
     if matches_pattern(pattern, request.uri().path()) {
         //let dest_uri = [destination, request.uri().path()].concat();
         let mut dest_uri: heapless::String<200> = heapless::String::new();
-        dest_uri.push_str(destination).map_err(|_| CbltError::HeaplessError {})?;
-        dest_uri.push_str(request.uri().path()).map_err(|_| CbltError::HeaplessError {})?;
+        dest_uri
+            .push_str(destination)
+            .map_err(|_| CbltError::HeaplessError {})?;
+        dest_uri
+            .push_str(request.uri().path())
+            .map_err(|_| CbltError::HeaplessError {})?;
 
         #[cfg(debug_assertions)]
         debug!("Destination URI: {}", dest_uri);

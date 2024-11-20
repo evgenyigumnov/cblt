@@ -83,13 +83,24 @@ pub async fn ranged_file_response(
 
     let mut content_range: heapless::String<200> = heapless::String::new();
     //let content_range = format!("bytes {}-{}/{}", start, end, file_size);
-    content_range.push_str("bytes ").map_err(|_| CbltError::HeaplessError {})?;
-    content_range.push_str(start.to_string().as_str()).map_err(|_| CbltError::HeaplessError {})?;
-    content_range.push_str("-").map_err(|_| CbltError::HeaplessError {})?;
-    content_range.push_str(end.to_string().as_str()).map_err(|_| CbltError::HeaplessError {})?;
-    content_range.push_str("/").map_err(|_| CbltError::HeaplessError {})?;
-    content_range.push_str(file_size.to_string().as_str()).map_err(|_| CbltError::HeaplessError {})?;
-
+    content_range
+        .push_str("bytes ")
+        .map_err(|_| CbltError::HeaplessError {})?;
+    content_range
+        .push_str(start.to_string().as_str())
+        .map_err(|_| CbltError::HeaplessError {})?;
+    content_range
+        .push_str("-")
+        .map_err(|_| CbltError::HeaplessError {})?;
+    content_range
+        .push_str(end.to_string().as_str())
+        .map_err(|_| CbltError::HeaplessError {})?;
+    content_range
+        .push_str("/")
+        .map_err(|_| CbltError::HeaplessError {})?;
+    content_range
+        .push_str(file_size.to_string().as_str())
+        .map_err(|_| CbltError::HeaplessError {})?;
 
     Ok(Response::builder()
         .status(StatusCode::PARTIAL_CONTENT)

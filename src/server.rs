@@ -1,7 +1,8 @@
 use crate::config::Directive;
 use crate::directive::directive_process;
 use crate::error::CbltError;
-use heapless::FnvIndexMap;
+use std::collections::HashMap;
+
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -12,20 +13,12 @@ use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
 
-pub const STRING_CAPACITY: usize = 200;
-pub const DIRECTIVE_CAPACITY: usize = 10;
-pub const HOST_CAPACITY: usize = 8;
-
 #[derive(Debug, Clone)]
 pub struct Server {
     pub port: u16,
-    pub hosts: FnvIndexMap<
-        heapless::String<STRING_CAPACITY>,
-        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
-        HOST_CAPACITY,
-    >, // Host -> Directives
-    pub cert: Option<heapless::String<STRING_CAPACITY>>,
-    pub key: Option<heapless::String<STRING_CAPACITY>>,
+    pub hosts: HashMap<String, Vec<Directive>>, // Host -> Directives
+    pub cert: Option<String>,
+    pub key: Option<String>,
 }
 
 pub struct ServerWorker {
@@ -35,11 +28,7 @@ pub struct ServerWorker {
 
 #[derive(Clone)]
 pub struct ServerSettings {
-    pub hosts: FnvIndexMap<
-        heapless::String<STRING_CAPACITY>,
-        heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
-        HOST_CAPACITY,
-    >,
+    pub hosts: HashMap<String, Vec<Directive>>,
     pub tls_acceptor: Option<TlsAcceptor>,
 }
 
@@ -123,13 +112,9 @@ impl ServerWorker {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn update(
         &mut self,
-        hosts: FnvIndexMap<
-            heapless::String<STRING_CAPACITY>,
-            heapless::Vec<Directive, DIRECTIVE_CAPACITY>,
-            HOST_CAPACITY,
-        >,
-        cert_path: Option<heapless::String<STRING_CAPACITY>>,
-        key_path: Option<heapless::String<STRING_CAPACITY>>,
+        hosts: HashMap<String, Vec<Directive>>,
+        cert_path: Option<String>,
+        key_path: Option<String>,
     ) -> Result<(), CbltError> {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
