@@ -92,10 +92,13 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
         loop {
             {
                 let servers = rx.borrow_and_update().clone();
-                let _ = &sever_supervisor
+                if let Err(err) = &sever_supervisor
                     .process_workers(args_clone.clone(), servers)
                     .await
-                    .unwrap();
+                {
+                    error!("Error: {}", err);
+                    std::process::exit(0);
+                }
             }
 
             if rx.changed().await.is_err() {
@@ -111,11 +114,19 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
 
         loop {
             if reload_file_path.exists() {
-                let servers = load_servers_from_config(args.clone()).await.unwrap();
-                if let Err(err) = tx.send(servers) {
-                    error!("Error: {}", err);
+                match load_servers_from_config(args.clone()).await {
+                    Ok(servers) => {
+                        if let Err(err) = tx.send(servers) {
+                            error!("Error: {}", err);
+                        }
+                        if let Err(err) = std::fs::remove_file(reload_file_path) {
+                            error!("Error: {}", err);
+                        }
+                    }
+                    Err(err) => {
+                        error!("Error: {}", err);
+                    }
                 }
-                std::fs::remove_file(reload_file_path).unwrap();
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
