@@ -146,16 +146,24 @@ impl ReverseProxyState {
                         }
                     }
                 }
-                // If no valid cookie, fallback to Round Robin or another method
+
                 self.get_next_backend_round_robin().await
             },
         }
     }
 
     async fn get_next_backend_round_robin(&self) -> Option<Backend> {
-        // Similar to the Round Robin implementation above
-        // ...
-
+        let mut idx = self.current_backend.write().await;
+        let total_backends = self.backends.len();
+        for _ in 0..total_backends {
+            let backend = &self.backends[*idx];
+            if *backend.is_healthy.read().await {
+                let selected_backend = backend.clone();
+                *idx = (*idx + 1) % total_backends;
+                return Some(selected_backend);
+            }
+            *idx = (*idx + 1) % total_backends;
+        }
         None
     }
 
