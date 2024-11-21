@@ -225,7 +225,7 @@ where
     resp_bytes
         .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
         .await?;
-    resp_bytes.flush().await?;
+    resp_bytes.write_all(b"\r\n").await?;
 
     for (key, value) in parts.headers.iter() {
         resp_bytes.extend_from_slice(key.as_str().as_bytes());
