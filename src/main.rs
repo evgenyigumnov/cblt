@@ -164,7 +164,7 @@ impl ServerSupervisor {
                 worker.update(server.hosts, server.cert, server.key).await?;
                 info!("Server worker updated on port: {}", port);
             } else {
-                if let Ok(server_worker) = ServerWorker::new(server.clone()) {
+                if let Ok(server_worker) = ServerWorker::new(server.clone()).await {
                     if let Err(err) = server_worker.run(args.max_connections).await {
                         error!("Error: {}", err);
                     }

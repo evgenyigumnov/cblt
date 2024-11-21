@@ -74,3 +74,111 @@ where
         Err(CbltError::DirectiveNotMatched)
     }
 }
+
+
+use tokio::sync::RwLock;
+use std::sync::Arc;
+use std::collections::HashMap;
+use crate::config::LoadBalancePolicy;
+
+#[derive(Clone)]
+pub struct Backend {
+    pub url: String,
+    pub is_healthy: Arc<RwLock<bool>>,
+}
+
+pub struct ReverseProxyState {
+    pub backends: Vec<Backend>,
+    pub lb_policy: LoadBalancePolicy,
+    pub current_backend: Arc<RwLock<usize>>, // For Round Robin
+    pub client: Client,
+}
+
+impl ReverseProxyState {
+    pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, client: Client) -> Self {
+        Self {
+            backends: backends.into_iter().map(|url| Backend {
+                url,
+                is_healthy: Arc::new(RwLock::new(true)),
+            }).collect(),
+            lb_policy,
+            current_backend: Arc::new(RwLock::new(0)),
+            client,
+        }
+    }
+
+    pub async fn get_next_backend(&self, request: &Request<BytesMut>) -> Option<Backend> {
+        // Implement load balancing logic here
+        match &self.lb_policy {
+            LoadBalancePolicy::RoundRobin => {
+                let mut idx = self.current_backend.write().await;
+                let total_backends = self.backends.len();
+                for _ in 0..total_backends {
+                    let backend = &self.backends[*idx];
+                    if *backend.is_healthy.read().await {
+                        let selected_backend = backend.clone();
+                        *idx = (*idx + 1) % total_backends;
+                        return Some(selected_backend);
+                    }
+                    *idx = (*idx + 1) % total_backends;
+                }
+                None
+            },
+            LoadBalancePolicy::Cookie { cookie_name, .. } => {
+                // Check for the cookie in the request
+                if let Some(cookie_header) = request.headers().get("Cookie") {
+                    if let Ok(cookie_str) = cookie_header.to_str() {
+                        for cookie in cookie_str.split(';') {
+                            let cookie = cookie.trim();
+                            if cookie.starts_with(cookie_name) {
+                                let parts: Vec<&str> = cookie.split('=').collect();
+                                if parts.len() == 2 {
+                                    if let Ok(backend_idx) = parts[1].parse::<usize>() {
+                                        if backend_idx < self.backends.len() {
+                                            let backend = &self.backends[backend_idx];
+                                            if *backend.is_healthy.read().await {
+                                                return Some(backend.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // If no valid cookie, fallback to Round Robin or another method
+                self.get_next_backend_round_robin().await
+            },
+        }
+    }
+
+    async fn get_next_backend_round_robin(&self) -> Option<Backend> {
+        // Similar to the Round Robin implementation above
+        // ...
+
+        None
+    }
+
+    pub async fn start_health_checks(&self, health_uri: String, interval: u64, timeout: u64) {
+        let client = self.client.clone();
+        let backends = self.backends.clone();
+
+        tokio::spawn(async move {
+            let interval = tokio::time::Duration::from_secs(interval);
+            let timeout = tokio::time::Duration::from_secs(timeout);
+            loop {
+                for backend in &backends {
+                    let url = format!("{}{}", backend.url, health_uri);
+                    let is_healthy = backend.is_healthy.clone();
+                    let client = client.clone();
+                    tokio::spawn(async move {
+                        let resp = client.get(&url).timeout(timeout).send().await;
+                        let mut health = is_healthy.write().await;
+                        *health = resp.is_ok() && resp.unwrap().status().is_success();
+                    });
+                }
+                tokio::time::sleep(interval).await;
+            }
+        });
+    }
+}
