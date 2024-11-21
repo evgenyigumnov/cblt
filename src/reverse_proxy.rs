@@ -175,6 +175,7 @@ impl ReverseProxyState {
                         let resp = client.get(&url).timeout(timeout).send().await;
                         let mut health = is_healthy.write().await;
                         *health = resp.is_ok() && resp.unwrap().status().is_success();
+                        debug!("Health check for {}: {}", url, *health);
                     });
                 }
                 tokio::time::sleep(interval).await;
