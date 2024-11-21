@@ -29,11 +29,7 @@ pub enum Directive {
 #[derive(Debug, Clone)]
 pub enum LoadBalancePolicy {
     RoundRobin,
-    Cookie {
-        cookie_name: String,
-        cookie_path: String,
-        cookie_max_age: u32,
-    },
+    Cookie { cookie_name: String },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -189,8 +185,6 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
                             }
                             "cookie" => {
                                 let mut cookie_name = None;
-                                let mut cookie_path = None;
-                                let mut cookie_max_age = None;
 
                                 if let Some(cookie_children) = child.children() {
                                     for cookie_child in cookie_children.nodes() {
@@ -202,34 +196,18 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
                                                     cookie_name = Some((*name).to_string());
                                                 }
                                             }
-                                            "lb_cookie_path" => {
-                                                if let Some(path) = cookie_args.get(0) {
-                                                    cookie_path = Some((*path).to_string());
-                                                }
-                                            }
-                                            "lb_cookie_max_age" => {
-                                                if let Some(max_age) = cookie_args.get(0) {
-                                                    if let Ok(age) = max_age.parse::<u32>() {
-                                                        cookie_max_age = Some(age);
-                                                    }
-                                                }
-                                            }
                                             _ => {}
                                         }
                                     }
                                 }
 
-                                if let (Some(cookie_name), Some(cookie_path), Some(cookie_max_age)) =
-                                    (cookie_name, cookie_path, cookie_max_age)
-                                {
-                                    options.lb_policy = Some(LoadBalancePolicy::Cookie {
-                                        cookie_name,
-                                        cookie_path,
-                                        cookie_max_age,
-                                    });
+                                if let Some(cookie_name) = cookie_name {
+                                    options.lb_policy =
+                                        Some(LoadBalancePolicy::Cookie { cookie_name });
                                 } else {
                                     return Err(CbltError::KdlParseError {
-                                        details: "Incomplete 'cookie' lb_policy options".to_string(),
+                                        details: "Incomplete 'cookie' lb_policy options"
+                                            .to_string(),
                                     });
                                 }
                             }

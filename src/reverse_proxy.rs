@@ -19,7 +19,6 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     for (pattern, reverse_proxy_stat) in states {
-
         if matches_pattern(pattern, request.uri().path()) {
             if let Some(destination) = reverse_proxy_stat.get_next_backend(request).await {
                 debug!("Selected backend: {:?}", destination);
@@ -34,7 +33,8 @@ where
                 #[cfg(debug_assertions)]
                 debug!("Destination URI: {}", dest_uri);
 
-                let mut req_builder = client_reqwest.request(request.method().clone(), dest_uri.as_str());
+                let mut req_builder =
+                    client_reqwest.request(request.method().clone(), dest_uri.as_str());
                 for (key, value) in request.headers().iter() {
                     req_builder = req_builder.header(key, value);
                 }
@@ -58,9 +58,9 @@ where
                             return Err(CbltError::ResponseError {
                                 details: "Bad gateway".to_string(),
                                 status_code: status,
-                            })
+                            });
                         } else {
-                            return Ok(status)
+                            return Ok(status);
                         }
                     }
                     Err(err) => {
@@ -69,30 +69,27 @@ where
                         return Err(CbltError::ResponseError {
                             details: err.to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
-                        })
+                        });
                     }
                 }
-
             } else {
                 return Err(CbltError::ResponseError {
                     details: "No healthy backends".to_string(),
                     status_code: StatusCode::BAD_GATEWAY,
-                })
+                });
             }
         }
     }
 
     Err(CbltError::DirectiveNotMatched)
-
 }
 
-
-use tokio::sync::RwLock;
-use std::sync::Arc;
-use std::collections::HashMap;
 use crate::config::LoadBalancePolicy;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Backend {
     pub url: String,
     pub is_healthy: Arc<RwLock<bool>>,
@@ -108,10 +105,13 @@ pub struct ReverseProxyState {
 impl ReverseProxyState {
     pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, client: Client) -> Self {
         Self {
-            backends: backends.into_iter().map(|url| Backend {
-                url,
-                is_healthy: Arc::new(RwLock::new(true)),
-            }).collect(),
+            backends: backends
+                .into_iter()
+                .map(|url| Backend {
+                    url,
+                    is_healthy: Arc::new(RwLock::new(true)),
+                })
+                .collect(),
             lb_policy,
             current_backend: Arc::new(RwLock::new(0)),
             client,
@@ -134,7 +134,7 @@ impl ReverseProxyState {
                     *idx = (*idx + 1) % total_backends;
                 }
                 None
-            },
+            }
             LoadBalancePolicy::Cookie { cookie_name, .. } => {
                 // Check for the cookie in the request
                 if let Some(cookie_header) = request.headers().get("Cookie") {
@@ -159,7 +159,7 @@ impl ReverseProxyState {
                 }
 
                 self.get_next_backend_round_robin().await
-            },
+            }
         }
     }
 

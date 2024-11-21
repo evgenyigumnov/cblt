@@ -67,6 +67,4 @@ pub enum CbltError {
     KdlParseError { details: String },
     #[error("HeaplessError")]
     HeaplessError,
-    #[error("DirectivesNotFound")]
-    DirectivesNotFound,
 }

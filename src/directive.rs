@@ -2,17 +2,16 @@ use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, log_request_response, send_response};
+use crate::server::ServerSettings;
 use crate::{file_server, matches_pattern, reverse_proxy};
 use bytes::BytesMut;
 use http::{Response, StatusCode};
 use log::{debug, error};
 use reqwest::Client;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
 use tracing::instrument;
-use crate::server::{HostDetails, ServerSettings};
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn directive_process<S>(
@@ -119,7 +118,7 @@ where
                     Directive::ReverseProxy {
                         pattern,
                         destinations,
-                        options,
+                        ..
                     } => {
                         #[cfg(debug_assertions)]
                         debug!("Reverse proxy: {} -> {:?}", pattern, destinations);

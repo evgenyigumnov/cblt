@@ -1,20 +1,19 @@
-use std::collections::hash_map::Entry;
 use crate::config::{Directive, LoadBalancePolicy};
 use crate::directive::directive_process;
 use crate::error::CbltError;
 use std::collections::HashMap;
 
+use crate::reverse_proxy::ReverseProxyState;
+use humantime::Duration;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::Arc;
-use humantime::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::{RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
-use crate::reverse_proxy::ReverseProxyState;
 
 #[derive(Debug, Clone)]
 pub struct Server {
@@ -54,7 +53,6 @@ pub struct HostDetails {
     pub reverse_proxy_states: HashMap<String, ReverseProxyState>,
 }
 
-
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn tls_acceptor_builder(
     cert_path: Option<&str>,
@@ -73,19 +71,20 @@ fn tls_acceptor_builder(
     }
 }
 
-
 impl ServerWorker {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn new(server: Server) -> Result<Self, CbltError> {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
 
-
         let mut host_details: HashMap<String, HostDetails> = HashMap::new();
         for (k, v) in server.hosts {
-            host_details.insert(k.to_string(), HostDetails {
-                reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
-                directives: v,
-            });
+            host_details.insert(
+                k.to_string(),
+                HostDetails {
+                    reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
+                    directives: v,
+                },
+            );
         }
 
         Ok(ServerWorker {
@@ -127,10 +126,13 @@ impl ServerWorker {
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
         let mut host_details: HashMap<String, HostDetails> = HashMap::new();
         for (k, v) in hosts {
-            host_details.insert(k.to_string(), HostDetails {
-                reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
-                directives: v,
-            });
+            host_details.insert(
+                k.to_string(),
+                HostDetails {
+                    reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
+                    directives: v,
+                },
+            );
         }
 
         self.lock
@@ -146,45 +148,52 @@ impl ServerWorker {
     }
 }
 
-async fn init_proxy_states(directives: &Vec<Directive>) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
+async fn init_proxy_states(
+    directives: &Vec<Directive>,
+) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
     let mut reverse_proxy_states: HashMap<String, ReverseProxyState> = HashMap::new(); // (pattern -> ReverseProxyState)
     let client_reqwest = reqwest::Client::new();
-        for directive in directives {
-            match directive {
-                Directive::ReverseProxy { pattern, destinations, options } => {
-                    let reverse_proxy_state = ReverseProxyState::new(
-                        destinations.clone(),
-                        options.lb_policy.clone().unwrap_or(LoadBalancePolicy::RoundRobin),
-                        client_reqwest.clone(),
-                    );
+    for directive in directives {
+        match directive {
+            Directive::ReverseProxy {
+                pattern,
+                destinations,
+                options,
+            } => {
+                let reverse_proxy_state = ReverseProxyState::new(
+                    destinations.clone(),
+                    options
+                        .lb_policy
+                        .clone()
+                        .unwrap_or(LoadBalancePolicy::RoundRobin),
+                    client_reqwest.clone(),
+                );
 
-                    if let Some(health_uri) = &options.health_uri {
-                        let interval = options
-                            .health_interval
-                            .as_deref()
-                            .unwrap_or("10s")
-                            .parse::<humantime::Duration>()
-                            .unwrap_or(Duration::from(std::time::Duration::from_secs(10)))
-                            .as_secs();
-                        let timeout = options
-                            .health_timeout
-                            .as_deref()
-                            .unwrap_or("2s")
-                            .parse::<humantime::Duration>()
-                            .unwrap_or(Duration::from(std::time::Duration::from_secs(2)))
-                            .as_secs();
-                        reverse_proxy_state
-                            .start_health_checks(health_uri.clone(), interval, timeout)
-                            .await;
+                if let Some(health_uri) = &options.health_uri {
+                    let interval = options
+                        .health_interval
+                        .as_deref()
+                        .unwrap_or("10s")
+                        .parse::<humantime::Duration>()
+                        .unwrap_or(Duration::from(std::time::Duration::from_secs(10)))
+                        .as_secs();
+                    let timeout = options
+                        .health_timeout
+                        .as_deref()
+                        .unwrap_or("2s")
+                        .parse::<humantime::Duration>()
+                        .unwrap_or(Duration::from(std::time::Duration::from_secs(2)))
+                        .as_secs();
+                    reverse_proxy_state
+                        .start_health_checks(health_uri.clone(), interval, timeout)
+                        .await;
 
-                        reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
-
-                    }
+                    reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
                 }
-                _ => continue,
             }
-
+            _ => continue,
         }
+    }
 
     Ok(reverse_proxy_states)
 }
@@ -212,7 +221,8 @@ async fn init_server(
             match acceptor.as_ref() {
                 None => {
                     if let Err(err) =
-                        directive_process(&mut stream, settings.clone(), client_reqwest.clone()).await
+                        directive_process(&mut stream, settings.clone(), client_reqwest.clone())
+                            .await
                     {
                         #[cfg(debug_assertions)]
                         error!("Error: {}", err);
@@ -221,7 +231,8 @@ async fn init_server(
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
                         if let Err(err) =
-                            directive_process(&mut stream, settings.clone(), client_reqwest.clone()).await
+                            directive_process(&mut stream, settings.clone(), client_reqwest.clone())
+                                .await
                         {
                             #[cfg(debug_assertions)]
                             error!("Error: {}", err);
