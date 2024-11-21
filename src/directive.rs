@@ -8,14 +8,16 @@ use http::{Response, StatusCode};
 use log::{debug, error};
 use reqwest::Client;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
 use tracing::instrument;
+use crate::server::{HostDetails, ServerSettings};
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn directive_process<S>(
     socket: &mut S,
-    hosts: &HashMap<String, Vec<Directive>>,
+    settings: Arc<ServerSettings>,
     client_reqwest: Client,
 ) -> Result<(), CbltError>
 where
@@ -43,10 +45,10 @@ where
             };
 
             // find host starting with "*"
-            let cfg_opt = hosts.iter().find(|(k, _)| k.starts_with("*"));
+            let cfg_opt = settings.hosts.iter().find(|(k, _)| k.starts_with("*"));
             let host_config = match cfg_opt {
                 None => {
-                    let host_config = match hosts.get(host) {
+                    let host_config = match settings.hosts.get(host) {
                         Some(cfg) => cfg,
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
@@ -64,13 +66,13 @@ where
 
             let mut root_path: Option<&str> = None;
 
-            for directive in host_config {
+            for directive in &host_config.directives {
                 match directive {
                     Directive::Root { pattern, path } => {
                         #[cfg(debug_assertions)]
                         debug!("Root: {} -> {}", pattern, path);
-                        if matches_pattern(pattern, request.uri().path()) {
-                            root_path = Some(path);
+                        if matches_pattern(pattern.as_str(), request.uri().path()) {
+                            root_path = Some(path.as_str());
                         }
                     }
                     Directive::FileServer => {
@@ -123,7 +125,7 @@ where
                         match reverse_proxy::proxy_directive(
                             &request,
                             socket,
-                            pattern,
+                            pattern.as_str(),
                             destinations.first().unwrap(),
                             client_reqwest.clone(),
                         )

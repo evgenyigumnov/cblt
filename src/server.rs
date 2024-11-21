@@ -44,12 +44,16 @@ impl SettingsLock {
     }
 }
 
-#[derive(Clone)]
 pub struct ServerSettings {
-    pub hosts: Arc<HashMap<String, Vec<Directive>>>,
-    pub tls_acceptor: Arc<Option<TlsAcceptor>>,
-    pub reverse_proxy_states: Arc<HashMap<String, HashMap<String, ReverseProxyState>>>
+    pub hosts: HashMap<String, HostDetails>,
+    pub tls_acceptor: Option<TlsAcceptor>,
 }
+
+pub struct HostDetails {
+    pub directives: Vec<Directive>,
+    pub reverse_proxy_states: HashMap<String, ReverseProxyState>,
+}
+
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn tls_acceptor_builder(
@@ -75,17 +79,22 @@ impl ServerWorker {
     pub async fn new(server: Server) -> Result<Self, CbltError> {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
 
-        let reverse_proxy_states = init_proxy_states(&server.hosts).await;
 
+        let mut host_details: HashMap<String, HostDetails> = HashMap::new();
+        for (k, v) in server.hosts {
+            host_details.insert(k.to_string(), HostDetails {
+                reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
+                directives: v,
+            });
+        }
 
         Ok(ServerWorker {
             port: server.port,
             lock: Arc::new(SettingsLock {
                 settings: RwLock::new(
                     ServerSettings {
-                        hosts: server.hosts.into(),
+                        hosts: host_details.into(),
                         tls_acceptor: tls_acceptor.into(),
-                        reverse_proxy_states: Arc::new(reverse_proxy_states?),
                     }
                     .into(),
                 ),
@@ -116,13 +125,19 @@ impl ServerWorker {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
-        let reverse_proxy_states = init_proxy_states(&hosts).await;
+        let mut host_details: HashMap<String, HostDetails> = HashMap::new();
+        for (k, v) in hosts {
+            host_details.insert(k.to_string(), HostDetails {
+                reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
+                directives: v,
+            });
+        }
+
         self.lock
             .update(
                 ServerSettings {
-                    hosts: hosts.into(),
+                    hosts: host_details.into(),
                     tls_acceptor: tls_acceptor.into(),
-                    reverse_proxy_states: Arc::new(reverse_proxy_states?),
                 }
                 .into(),
             )
@@ -131,11 +146,9 @@ impl ServerWorker {
     }
 }
 
-async fn init_proxy_states(hosts: &HashMap<String, Vec<Directive>>) -> Result<HashMap<String, HashMap<String, ReverseProxyState>>, CbltError> {
-    let mut reverse_proxy_states:HashMap<String, HashMap<String, ReverseProxyState>> = HashMap::new(); // host -> (pattern -> ReverseProxyState)
+async fn init_proxy_states(directives: &Vec<Directive>) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
+    let mut reverse_proxy_states: HashMap<String, ReverseProxyState> = HashMap::new(); // (pattern -> ReverseProxyState)
     let client_reqwest = reqwest::Client::new();
-    for host in hosts.keys() {
-        let directives = hosts.get(host).ok_or(CbltError::DirectivesNotFound)?;
         for directive in directives {
             match directive {
                 Directive::ReverseProxy { pattern, destinations, options } => {
@@ -164,17 +177,7 @@ async fn init_proxy_states(hosts: &HashMap<String, Vec<Directive>>) -> Result<Ha
                             .start_health_checks(health_uri.clone(), interval, timeout)
                             .await;
 
-                        match reverse_proxy_states.entry(host.clone()) {
-                            Entry::Occupied(mut entry) => {
-                                entry.get_mut().insert(pattern.clone(), reverse_proxy_state);
-                            }
-
-                            Entry::Vacant(entry) => {
-                                let mut map = HashMap::new();
-                                map.insert(pattern.clone(), reverse_proxy_state);
-                                entry.insert(map);
-                            }
-                        }
+                        reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
 
                     }
                 }
@@ -182,7 +185,7 @@ async fn init_proxy_states(hosts: &HashMap<String, Vec<Directive>>) -> Result<Ha
             }
 
         }
-    }
+
     Ok(reverse_proxy_states)
 }
 
@@ -205,12 +208,11 @@ async fn init_server(
         tokio::spawn(async move {
             let _permit = permit;
             let settings = settings.get().await;
-            let hosts = settings.hosts.clone();
             let acceptor = settings.tls_acceptor.clone();
             match acceptor.as_ref() {
                 None => {
                     if let Err(err) =
-                        directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                        directive_process(&mut stream, settings.clone(), client_reqwest.clone()).await
                     {
                         #[cfg(debug_assertions)]
                         error!("Error: {}", err);
@@ -219,7 +221,7 @@ async fn init_server(
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
                         if let Err(err) =
-                            directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                            directive_process(&mut stream, settings.clone(), client_reqwest.clone()).await
                         {
                             #[cfg(debug_assertions)]
                             error!("Error: {}", err);
