@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::{socket_to_request, BUF_SIZE};
@@ -9,6 +8,7 @@ use bytes::BytesMut;
 use http::{Response, StatusCode};
 use log::{debug, error};
 use reqwest::Client;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]

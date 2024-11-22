@@ -81,7 +81,7 @@ impl ServerWorker {
             host_details.insert(
                 k.to_string(),
                 HostDetails {
-                    reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
+                    reverse_proxy_states: init_proxy_states(&v).await?,
                     directives: v,
                 },
             );
@@ -129,7 +129,7 @@ impl ServerWorker {
             host_details.insert(
                 k.to_string(),
                 HostDetails {
-                    reverse_proxy_states: init_proxy_states(&v).await.unwrap(),
+                    reverse_proxy_states: init_proxy_states(&v).await?,
                     directives: v,
                 },
             );
@@ -220,9 +220,13 @@ async fn init_server(
             let acceptor = settings.tls_acceptor.clone();
             match acceptor.as_ref() {
                 None => {
-                    if let Err(err) =
-                        directive_process(&mut stream, settings.clone(), client_reqwest.clone(), addr)
-                            .await
+                    if let Err(err) = directive_process(
+                        &mut stream,
+                        settings.clone(),
+                        client_reqwest.clone(),
+                        addr,
+                    )
+                    .await
                     {
                         #[cfg(debug_assertions)]
                         error!("Error: {}", err);
@@ -230,9 +234,13 @@ async fn init_server(
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        if let Err(err) =
-                            directive_process(&mut stream, settings.clone(), client_reqwest.clone(), addr)
-                                .await
+                        if let Err(err) = directive_process(
+                            &mut stream,
+                            settings.clone(),
+                            client_reqwest.clone(),
+                            addr,
+                        )
+                        .await
                         {
                             #[cfg(debug_assertions)]
                             error!("Error: {}", err);

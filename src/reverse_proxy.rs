@@ -3,7 +3,7 @@ use crate::{matches_pattern, CbltError};
 use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
 use log::debug;
-use reqwest::Client;
+use reqwest::{Client, Error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -24,7 +24,8 @@ where
         if matches_pattern(pattern, request.uri().path()) {
             if let Ok(destination) = reverse_proxy_stat.get_next_backend(addr).await {
                 debug!("Selected backend: {:?}", destination);
-                let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> = heapless::String::new();
+                let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> =
+                    heapless::String::new();
                 dest_uri
                     .push_str(destination.as_str())
                     .map_err(|_| CbltError::HeaplessError {})?;
@@ -122,8 +123,10 @@ impl ReverseProxyState {
         }
     }
 
-    pub async fn get_next_backend(&self, addr: SocketAddr) -> Result<heapless::String<HEAPLESS_STRING_SIZE>, CbltError> {
-
+    pub async fn get_next_backend(
+        &self,
+        addr: SocketAddr,
+    ) -> Result<heapless::String<HEAPLESS_STRING_SIZE>, CbltError> {
         // Implement load balancing logic here
         match &self.lb_policy {
             LoadBalancePolicy::RoundRobin => {
@@ -133,7 +136,8 @@ impl ReverseProxyState {
                     let backend = &self.backends[*idx];
                     if *backend.is_healthy.read().await {
                         *idx = (*idx + 1) % total_backends;
-                        return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                        return Ok(heapless::String::from_str(backend.url.as_str())
+                            .map_err(|_| CbltError::HeaplessError {})?);
                     }
                     *idx = (*idx + 1) % total_backends;
                 }
@@ -144,9 +148,7 @@ impl ReverseProxyState {
             }
             LoadBalancePolicy::IPHash => {
                 let addr_octets = match addr.ip() {
-                    IpAddr::V4(addr) => {
-                        addr.octets()
-                    }
+                    IpAddr::V4(addr) => addr.octets(),
                     IpAddr::V6(..) => {
                         return Err(CbltError::ResponseError {
                             details: "IPv6 not supported".to_string(),
@@ -154,15 +156,18 @@ impl ReverseProxyState {
                         });
                     }
                 };
-                let backend_idx = generate_number_from_octet(addr_octets, self.backends.len() as u32);
+                let backend_idx =
+                    generate_number_from_octet(addr_octets, self.backends.len() as u32);
                 let backend = &self.backends[backend_idx as usize];
                 if *backend.is_healthy.read().await {
-                    return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                    return Ok(heapless::String::from_str(backend.url.as_str())
+                        .map_err(|_| CbltError::HeaplessError {})?);
                 } else {
                     if backend_idx == self.backends.len() as u32 - 1 {
                         let backend = &self.backends[0 as usize];
                         if *backend.is_healthy.read().await {
-                            return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                            return Ok(heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {})?);
                         } else {
                             return Err(CbltError::ResponseError {
                                 details: "No healthy backends".to_string(),
@@ -172,7 +177,8 @@ impl ReverseProxyState {
                     } else {
                         let backend = &self.backends[(backend_idx + 1) as usize];
                         if *backend.is_healthy.read().await {
-                            return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                            return Ok(heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {})?);
                         } else {
                             return Err(CbltError::ResponseError {
                                 details: "No healthy backends".to_string(),
@@ -200,7 +206,16 @@ impl ReverseProxyState {
                     tokio::spawn(async move {
                         let resp = client.get(&url).timeout(timeout).send().await;
                         let mut health = is_healthy.write().await;
-                        *health = resp.is_ok() && resp.unwrap().status().is_success();
+                        *health = resp.is_ok()
+                            && match resp {
+                                Ok(rest) => rest.status().is_success(),
+                                Err(err) => {
+                                    #[cfg(debug_assertions)]
+                                    debug!("Error: {:?}", err);
+                                    false
+                                }
+                            };
+                        #[cfg(debug_assertions)]
                         debug!("Health check for {}: {}", url, *health);
                     });
                 }
@@ -221,4 +236,3 @@ fn generate_number_from_octet(octets: [u8; 4], max: u32) -> u32 {
 
     (hash % max as u64) as u32
 }
-
