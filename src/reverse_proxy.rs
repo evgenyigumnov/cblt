@@ -144,13 +144,10 @@ impl ReverseProxyState {
                             if cookie.starts_with(cookie_name) {
                                 let parts: Vec<&str> = cookie.split('=').collect();
                                 if parts.len() == 2 {
-                                    if let Ok(backend_idx) = parts[1].parse::<usize>() {
-                                        if backend_idx < self.backends.len() {
-                                            let backend = &self.backends[backend_idx];
-                                            if *backend.is_healthy.read().await {
-                                                return Some(backend.clone());
-                                            }
-                                        }
+                                    let backend_idx = generate_number_from_string(parts[1], self.backends.len() as u32);
+                                    let backend = &self.backends[backend_idx as usize];
+                                    if *backend.is_healthy.read().await {
+                                        return Some(backend.clone());
                                     }
                                 }
                             }
@@ -201,4 +198,19 @@ impl ReverseProxyState {
             }
         });
     }
+}
+
+
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+
+fn generate_number_from_string(input: &str, max: u32) -> u32 {
+// use FNV-1a algorithm
+    let mut hash: u64 = FNV_OFFSET_BASIS;
+    for byte in input.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+
+    (hash % max as u64) as u32
 }
