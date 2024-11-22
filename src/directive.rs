@@ -2,12 +2,14 @@ use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::{socket_to_request, BUF_SIZE};
 use crate::response::{error_response, log_request_response, send_response};
+use crate::server::ServerSettings;
 use crate::{file_server, matches_pattern, reverse_proxy};
 use bytes::BytesMut;
 use http::{Response, StatusCode};
 use log::{debug, error};
 use reqwest::Client;
-use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -15,8 +17,9 @@ use tracing::instrument;
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn directive_process<S>(
     socket: &mut S,
-    hosts: &HashMap<String, Vec<Directive>>,
+    settings: Arc<ServerSettings>,
     client_reqwest: Client,
+    addr: SocketAddr,
 ) -> Result<(), CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
@@ -43,10 +46,10 @@ where
             };
 
             // find host starting with "*"
-            let cfg_opt = hosts.iter().find(|(k, _)| k.starts_with("*"));
+            let cfg_opt = settings.hosts.iter().find(|(k, _)| k.starts_with("*"));
             let host_config = match cfg_opt {
                 None => {
-                    let host_config = match hosts.get(host) {
+                    let host_config = match settings.hosts.get(host) {
                         Some(cfg) => cfg,
                         None => {
                             let response = error_response(StatusCode::FORBIDDEN);
@@ -64,13 +67,13 @@ where
 
             let mut root_path: Option<&str> = None;
 
-            for directive in host_config {
+            for directive in &host_config.directives {
                 match directive {
                     Directive::Root { pattern, path } => {
                         #[cfg(debug_assertions)]
                         debug!("Root: {} -> {}", pattern, path);
-                        if matches_pattern(pattern, request.uri().path()) {
-                            root_path = Some(path);
+                        if matches_pattern(pattern.as_str(), request.uri().path()) {
+                            root_path = Some(path.as_str());
                         }
                     }
                     Directive::FileServer => {
@@ -116,16 +119,17 @@ where
                     }
                     Directive::ReverseProxy {
                         pattern,
-                        destination,
+                        destinations,
+                        ..
                     } => {
                         #[cfg(debug_assertions)]
-                        debug!("Reverse proxy: {} -> {}", pattern, destination);
+                        debug!("Reverse proxy: {} -> {:?}", pattern, destinations);
                         match reverse_proxy::proxy_directive(
                             &request,
                             socket,
-                            pattern,
-                            destination,
                             client_reqwest.clone(),
+                            &host_config.reverse_proxy_states,
+                            addr,
                         )
                         .await
                         {

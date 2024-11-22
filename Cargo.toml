@@ -1,6 +1,6 @@
 [package]
 name = "cblt"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 
 authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
@@ -40,6 +40,7 @@ async-compression = { version = "0.4.17", features = ["tokio", "gzip"] }
 thiserror = "2.0.3"
 anyhow = "1.0.93"
 heapless = "0.8.0"
+humantime = "2.1.0"
 
 [features]
 default = []

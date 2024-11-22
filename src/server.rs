@@ -1,8 +1,10 @@
-use crate::config::Directive;
+use crate::config::{Directive, LoadBalancePolicy};
 use crate::directive::directive_process;
 use crate::error::CbltError;
 use std::collections::HashMap;
 
+use crate::reverse_proxy::ReverseProxyState;
+use humantime::Duration;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -41,10 +43,14 @@ impl SettingsLock {
     }
 }
 
-#[derive(Clone)]
 pub struct ServerSettings {
-    pub hosts: Arc<HashMap<String, Vec<Directive>>>,
-    pub tls_acceptor: Arc<Option<TlsAcceptor>>,
+    pub hosts: HashMap<String, HostDetails>,
+    pub tls_acceptor: Option<TlsAcceptor>,
+}
+
+pub struct HostDetails {
+    pub directives: Vec<Directive>,
+    pub reverse_proxy_states: HashMap<String, ReverseProxyState>,
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
@@ -64,16 +70,29 @@ fn tls_acceptor_builder(
         Ok(None)
     }
 }
+
 impl ServerWorker {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub fn new(server: Server) -> Result<Self, CbltError> {
+    pub async fn new(server: Server) -> Result<Self, CbltError> {
         let tls_acceptor = tls_acceptor_builder(server.cert.as_deref(), server.key.as_deref())?;
+
+        let mut host_details: HashMap<String, HostDetails> = HashMap::new();
+        for (k, v) in server.hosts {
+            host_details.insert(
+                k.to_string(),
+                HostDetails {
+                    reverse_proxy_states: init_proxy_states(&v).await?,
+                    directives: v,
+                },
+            );
+        }
+
         Ok(ServerWorker {
             port: server.port,
             lock: Arc::new(SettingsLock {
                 settings: RwLock::new(
                     ServerSettings {
-                        hosts: server.hosts.into(),
+                        hosts: host_details.into(),
                         tls_acceptor: tls_acceptor.into(),
                     }
                     .into(),
@@ -105,10 +124,21 @@ impl ServerWorker {
         let cert_path_opt = cert_path.as_deref();
         let key_path_opt = key_path.as_deref();
         let tls_acceptor = tls_acceptor_builder(cert_path_opt, key_path_opt)?;
+        let mut host_details: HashMap<String, HostDetails> = HashMap::new();
+        for (k, v) in hosts {
+            host_details.insert(
+                k.to_string(),
+                HostDetails {
+                    reverse_proxy_states: init_proxy_states(&v).await?,
+                    directives: v,
+                },
+            );
+        }
+
         self.lock
             .update(
                 ServerSettings {
-                    hosts: hosts.into(),
+                    hosts: host_details.into(),
                     tls_acceptor: tls_acceptor.into(),
                 }
                 .into(),
@@ -116,6 +146,56 @@ impl ServerWorker {
             .await;
         Ok(())
     }
+}
+
+async fn init_proxy_states(
+    directives: &Vec<Directive>,
+) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
+    let mut reverse_proxy_states: HashMap<String, ReverseProxyState> = HashMap::new(); // (pattern -> ReverseProxyState)
+    let client_reqwest = reqwest::Client::new();
+    for directive in directives {
+        match directive {
+            Directive::ReverseProxy {
+                pattern,
+                destinations,
+                options,
+            } => {
+                let reverse_proxy_state = ReverseProxyState::new(
+                    destinations.clone(),
+                    options
+                        .lb_policy
+                        .clone()
+                        .unwrap_or(LoadBalancePolicy::RoundRobin),
+                    client_reqwest.clone(),
+                );
+
+                if let Some(health_uri) = &options.health_uri {
+                    let interval = options
+                        .health_interval
+                        .as_deref()
+                        .unwrap_or("10s")
+                        .parse::<humantime::Duration>()
+                        .unwrap_or(Duration::from(std::time::Duration::from_secs(10)))
+                        .as_secs();
+                    let timeout = options
+                        .health_timeout
+                        .as_deref()
+                        .unwrap_or("2s")
+                        .parse::<humantime::Duration>()
+                        .unwrap_or(Duration::from(std::time::Duration::from_secs(2)))
+                        .as_secs();
+                    reverse_proxy_state
+                        .start_health_checks(health_uri.clone(), interval, timeout)
+                        .await;
+
+                    reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(reverse_proxy_states)
 }
 
 async fn init_server(
@@ -131,18 +211,22 @@ async fn init_server(
 
     loop {
         let client_reqwest = client_reqwest.clone();
-        let (mut stream, _) = listener.accept().await?;
+        let (mut stream, addr) = listener.accept().await?;
         let permit = semaphore.clone().acquire_owned().await?;
         let settings = settings_lock.clone();
         tokio::spawn(async move {
             let _permit = permit;
             let settings = settings.get().await;
-            let hosts = settings.hosts.clone();
             let acceptor = settings.tls_acceptor.clone();
             match acceptor.as_ref() {
                 None => {
-                    if let Err(err) =
-                        directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                    if let Err(err) = directive_process(
+                        &mut stream,
+                        settings.clone(),
+                        client_reqwest.clone(),
+                        addr,
+                    )
+                    .await
                     {
                         #[cfg(debug_assertions)]
                         error!("Error: {}", err);
@@ -150,8 +234,13 @@ async fn init_server(
                 }
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
-                        if let Err(err) =
-                            directive_process(&mut stream, &hosts, client_reqwest.clone()).await
+                        if let Err(err) = directive_process(
+                            &mut stream,
+                            settings.clone(),
+                            client_reqwest.clone(),
+                            addr,
+                        )
+                        .await
                         {
                             #[cfg(debug_assertions)]
                             error!("Error: {}", err);

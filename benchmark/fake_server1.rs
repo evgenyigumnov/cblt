@@ -17,7 +17,7 @@ use serde_json::Value;
 #[tokio::main]
 async fn main() {
     let app = Router::new().route("/*path", post(echo_handler)).route("/", post(echo_handler)).route("/health", get(health_handler));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8081")
         .await
         .unwrap();
     println!("listening on {}", listener.local_addr().unwrap());

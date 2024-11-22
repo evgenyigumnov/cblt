@@ -1,5 +1,5 @@
 use crate::error::CbltError;
-use kdl::KdlDocument;
+use kdl::{KdlDocument, KdlNode};
 use log::debug;
 use std::collections::HashMap;
 #[cfg(feature = "trace")]
@@ -14,9 +14,8 @@ pub enum Directive {
     FileServer,
     ReverseProxy {
         pattern: String,
-        destination: String,
-        //         destinations: Vec<String, DESTINATION_CAPACITY>,
-        //         lb_policy: LoadBalancePolicy,
+        destinations: Vec<String>,
+        options: ReverseProxyOptions,
     },
     Redir {
         destination: String,
@@ -26,20 +25,20 @@ pub enum Directive {
         key: String,
     },
 }
-// #[derive(Debug, Clone)]
-// pub enum LoadBalancePolicy {
-//     None,
-//     RoundRobin {
-//         uri: String,
-//         interval: u32,
-//         timeout: u32,
-//     },
-//     Cookie {
-//         cookie_name: String,
-//         cookie_path: String,
-//         cookie_max_age: u32,
-//     },
-// }
+
+#[derive(Debug, Clone)]
+pub enum LoadBalancePolicy {
+    RoundRobin,
+    IPHash,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ReverseProxyOptions {
+    pub health_uri: Option<String>,
+    pub health_interval: Option<String>,
+    pub health_timeout: Option<String>,
+    pub lb_policy: Option<LoadBalancePolicy>,
+}
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>, CbltError> {
@@ -57,22 +56,9 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "root" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args
-                                .first()
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "pattern absent".to_string(),
-                                })?
-                                .to_string();
-                            let path = args
-                                .get(1)
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "path absent".to_string(),
-                                })?
-                                .to_string();
-                            directives.push(Directive::Root {
-                                pattern: pattern,
-                                path: path,
-                            });
+                            let pattern = args[0].to_string();
+                            let path = args[1].to_string();
+                            directives.push(Directive::Root { pattern, path });
                         } else {
                             return Err(CbltError::KdlParseError {
                                 details: format!("Invalid 'root' directive for host {}", hostname),
@@ -85,21 +71,15 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "reverse_proxy" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let pattern = args
-                                .first()
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "pattern absent".to_string(),
-                                })?
-                                .to_string();
-                            let destination = args
-                                .get(1)
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "destination absent".to_string(),
-                                })?
-                                .to_string();
+                            let pattern = args[0].to_string();
+                            let destinations = args[1..].iter().map(|s| s.to_string()).collect();
+
+                            let options = parse_reverse_proxy_options(child_node)?;
+
                             directives.push(Directive::ReverseProxy {
-                                pattern: pattern,
-                                destination: destination,
+                                pattern,
+                                destinations,
+                                options,
                             });
                         } else {
                             return Err(CbltError::KdlParseError {
@@ -113,15 +93,8 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "redir" => {
                         let args = get_string_args(child_node);
                         if !args.is_empty() {
-                            let destination = args
-                                .first()
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "destination absent".to_string(),
-                                })?
-                                .to_string();
-                            directives.push(Directive::Redir {
-                                destination: destination,
-                            });
+                            let destination = args[0].to_string();
+                            directives.push(Directive::Redir { destination });
                         } else {
                             return Err(CbltError::KdlParseError {
                                 details: format!("Invalid 'redir' directive for host {}", hostname),
@@ -131,22 +104,9 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                     "tls" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
-                            let cert_path = args
-                                .first()
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "cert path absent".to_string(),
-                                })?
-                                .to_string();
-                            let key_path = args
-                                .get(1)
-                                .ok_or(CbltError::KdlParseError {
-                                    details: "key path absent".to_string(),
-                                })?
-                                .to_string();
-                            directives.push(Directive::TlS {
-                                cert: cert_path,
-                                key: key_path,
-                            });
+                            let cert = args[0].to_string();
+                            let key = args[1].to_string();
+                            directives.push(Directive::TlS { cert, key });
                         } else {
                             return Err(CbltError::KdlParseError {
                                 details: format!("Invalid 'tls' directive for host {}", hostname),
@@ -184,11 +144,66 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
     Ok(hosts)
 }
 
-fn get_string_args<'a>(node: &'a kdl::KdlNode) -> Vec<&'a str> {
+fn get_string_args<'a>(node: &'a KdlNode) -> Vec<&'a str> {
     node.entries()
         .iter()
         .filter_map(|e| e.value().as_string())
         .collect::<Vec<&'a str>>()
+}
+
+fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, CbltError> {
+    let mut options = ReverseProxyOptions::default();
+
+    if let Some(children) = node.children() {
+        for child in children.nodes() {
+            let name = child.name().value();
+            match name {
+                "health_uri" => {
+                    let args = get_string_args(child);
+                    if let Some(uri) = args.get(0) {
+                        options.health_uri = Some((*uri).to_string());
+                    }
+                }
+                "health_interval" => {
+                    let args = get_string_args(child);
+                    if let Some(interval) = args.get(0) {
+                        options.health_interval = Some((*interval).to_string());
+                    }
+                }
+                "health_timeout" => {
+                    let args = get_string_args(child);
+                    if let Some(timeout) = args.get(0) {
+                        options.health_timeout = Some((*timeout).to_string());
+                    }
+                }
+                "lb_policy" => {
+                    let args = get_string_args(child);
+                    if let Some(policy_name) = args.get(0) {
+                        match *policy_name {
+                            "round_robin" => {
+                                options.lb_policy = Some(LoadBalancePolicy::RoundRobin);
+                            }
+                            "ip_hash" => {
+                                options.lb_policy = Some(LoadBalancePolicy::IPHash);
+                            }
+                            _ => {
+                                return Err(CbltError::KdlParseError {
+                                    details: format!("Unknown lb_policy '{}'", policy_name),
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    return Err(CbltError::KdlParseError {
+                        details: format!("Unknown reverse_proxy option '{}'", name),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(options)
 }
 
 #[cfg(test)]
@@ -239,6 +254,45 @@ example.com {
     root "*" "/path/to/folder"
     file_server
     tls "/path/to/your/certificate.crt" "/path/to/your/private.key"
+}
+            "#;
+        let doc: KdlDocument = cblt_file.parse()?;
+        let config = build_config(&doc)?;
+        println!("{:#?}", config);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reverse_proxy_with_options() -> Result<(), Box<dyn Error>> {
+        let cblt_file = r#"
+"example.com" {
+    reverse_proxy "/api/*" "backend1:8080" "backend2:8080" {
+        health_uri "/health"
+        health_interval "10s"
+        health_timeout "2s"
+        lb_policy "round_robin"
+    }
+}
+            "#;
+        let doc: KdlDocument = cblt_file.parse()?;
+        let config = build_config(&doc)?;
+        println!("{:#?}", config);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reverse_proxy_with_cookie_lb_policy() -> Result<(), Box<dyn Error>> {
+        let cblt_file = r#"
+"example.com" {
+    reverse_proxy "/api/*" "backend1:8080" "backend2:8080" {
+        lb_policy "cookie" {
+            lb_cookie_name "my_sticky_cookie"
+            lb_cookie_path "/"
+            lb_cookie_max_age "3600"
+        }
+    }
 }
             "#;
         let doc: KdlDocument = cblt_file.parse()?;
