@@ -29,7 +29,7 @@ pub enum Directive {
 #[derive(Debug, Clone)]
 pub enum LoadBalancePolicy {
     RoundRobin,
-    Cookie { cookie_name: String },
+    IPHash,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -183,33 +183,8 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
                             "round_robin" => {
                                 options.lb_policy = Some(LoadBalancePolicy::RoundRobin);
                             }
-                            "cookie" => {
-                                let mut cookie_name = None;
-
-                                if let Some(cookie_children) = child.children() {
-                                    for cookie_child in cookie_children.nodes() {
-                                        let cookie_field = cookie_child.name().value();
-                                        let cookie_args = get_string_args(cookie_child);
-                                        match cookie_field {
-                                            "lb_cookie_name" => {
-                                                if let Some(name) = cookie_args.get(0) {
-                                                    cookie_name = Some((*name).to_string());
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-
-                                if let Some(cookie_name) = cookie_name {
-                                    options.lb_policy =
-                                        Some(LoadBalancePolicy::Cookie { cookie_name });
-                                } else {
-                                    return Err(CbltError::KdlParseError {
-                                        details: "Incomplete 'cookie' lb_policy options"
-                                            .to_string(),
-                                    });
-                                }
+                            "ip_hash" => {
+                                options.lb_policy = Some(LoadBalancePolicy::IPHash);
                             }
                             _ => {
                                 return Err(CbltError::KdlParseError {

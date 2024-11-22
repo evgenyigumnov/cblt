@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use crate::config::Directive;
 use crate::error::CbltError;
 use crate::request::{socket_to_request, BUF_SIZE};
@@ -18,6 +19,7 @@ pub async fn directive_process<S>(
     socket: &mut S,
     settings: Arc<ServerSettings>,
     client_reqwest: Client,
+    addr: SocketAddr,
 ) -> Result<(), CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
@@ -127,6 +129,7 @@ where
                             socket,
                             client_reqwest.clone(),
                             &host_config.reverse_proxy_states,
+                            addr,
                         )
                         .await
                         {

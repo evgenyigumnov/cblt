@@ -211,7 +211,7 @@ async fn init_server(
 
     loop {
         let client_reqwest = client_reqwest.clone();
-        let (mut stream, _) = listener.accept().await?;
+        let (mut stream, addr) = listener.accept().await?;
         let permit = semaphore.clone().acquire_owned().await?;
         let settings = settings_lock.clone();
         tokio::spawn(async move {
@@ -221,7 +221,7 @@ async fn init_server(
             match acceptor.as_ref() {
                 None => {
                     if let Err(err) =
-                        directive_process(&mut stream, settings.clone(), client_reqwest.clone())
+                        directive_process(&mut stream, settings.clone(), client_reqwest.clone(), addr)
                             .await
                     {
                         #[cfg(debug_assertions)]
@@ -231,7 +231,7 @@ async fn init_server(
                 Some(ref acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
                         if let Err(err) =
-                            directive_process(&mut stream, settings.clone(), client_reqwest.clone())
+                            directive_process(&mut stream, settings.clone(), client_reqwest.clone(), addr)
                                 .await
                         {
                             #[cfg(debug_assertions)]

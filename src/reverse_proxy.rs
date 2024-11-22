@@ -7,6 +7,7 @@ use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
 use tracing::instrument;
+pub const HEAPLESS_STRING_SIZE: usize = 100;
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn proxy_directive<S>(
@@ -14,17 +15,18 @@ pub async fn proxy_directive<S>(
     socket: &mut S,
     client_reqwest: Client,
     states: &HashMap<String, ReverseProxyState>,
+    addr: SocketAddr,
 ) -> Result<StatusCode, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     for (pattern, reverse_proxy_stat) in states {
         if matches_pattern(pattern, request.uri().path()) {
-            if let Some(destination) = reverse_proxy_stat.get_next_backend(request).await {
+            if let Ok(destination) = reverse_proxy_stat.get_next_backend(addr).await {
                 debug!("Selected backend: {:?}", destination);
-                let mut dest_uri: heapless::String<200> = heapless::String::new();
+                let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> = heapless::String::new();
                 dest_uri
-                    .push_str(destination.url.as_str())
+                    .push_str(destination.as_str())
                     .map_err(|_| CbltError::HeaplessError {})?;
                 dest_uri
                     .push_str(request.uri().path())
@@ -86,6 +88,8 @@ where
 
 use crate::config::LoadBalancePolicy;
 use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -118,7 +122,8 @@ impl ReverseProxyState {
         }
     }
 
-    pub async fn get_next_backend(&self, request: &Request<BytesMut>) -> Option<Backend> {
+    pub async fn get_next_backend(&self, addr: SocketAddr) -> Result<heapless::String<HEAPLESS_STRING_SIZE>, CbltError> {
+
         // Implement load balancing logic here
         match &self.lb_policy {
             LoadBalancePolicy::RoundRobin => {
@@ -127,52 +132,57 @@ impl ReverseProxyState {
                 for _ in 0..total_backends {
                     let backend = &self.backends[*idx];
                     if *backend.is_healthy.read().await {
-                        let selected_backend = backend.clone();
                         *idx = (*idx + 1) % total_backends;
-                        return Some(selected_backend);
+                        return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
                     }
                     *idx = (*idx + 1) % total_backends;
                 }
-                None
+                Err(CbltError::ResponseError {
+                    details: "No healthy backends".to_string(),
+                    status_code: StatusCode::BAD_GATEWAY,
+                })
             }
-            LoadBalancePolicy::Cookie { cookie_name, .. } => {
-                // Check for the cookie in the request
-                if let Some(cookie_header) = request.headers().get("Cookie") {
-                    if let Ok(cookie_str) = cookie_header.to_str() {
-                        for cookie in cookie_str.split(';') {
-                            let cookie = cookie.trim();
-                            if cookie.starts_with(cookie_name) {
-                                let parts: Vec<&str> = cookie.split('=').collect();
-                                if parts.len() == 2 {
-                                    let backend_idx = generate_number_from_string(parts[1], self.backends.len() as u32);
-                                    let backend = &self.backends[backend_idx as usize];
-                                    if *backend.is_healthy.read().await {
-                                        return Some(backend.clone());
-                                    }
-                                }
-                            }
+            LoadBalancePolicy::IPHash => {
+                let addr_octets = match addr.ip() {
+                    IpAddr::V4(addr) => {
+                        addr.octets()
+                    }
+                    IpAddr::V6(..) => {
+                        return Err(CbltError::ResponseError {
+                            details: "IPv6 not supported".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        });
+                    }
+                };
+                let backend_idx = generate_number_from_octet(addr_octets, self.backends.len() as u32);
+                let backend = &self.backends[backend_idx as usize];
+                if *backend.is_healthy.read().await {
+                    return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                } else {
+                    if backend_idx == self.backends.len() as u32 - 1 {
+                        let backend = &self.backends[0 as usize];
+                        if *backend.is_healthy.read().await {
+                            return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                        } else {
+                            return Err(CbltError::ResponseError {
+                                details: "No healthy backends".to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            });
+                        }
+                    } else {
+                        let backend = &self.backends[(backend_idx + 1) as usize];
+                        if *backend.is_healthy.read().await {
+                            return Ok(heapless::String::from_str(backend.url.as_str()).map_err(|_| CbltError::HeaplessError {})?);
+                        } else {
+                            return Err(CbltError::ResponseError {
+                                details: "No healthy backends".to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            });
                         }
                     }
                 }
-
-                self.get_next_backend_round_robin().await
             }
         }
-    }
-
-    async fn get_next_backend_round_robin(&self) -> Option<Backend> {
-        let mut idx = self.current_backend.write().await;
-        let total_backends = self.backends.len();
-        for _ in 0..total_backends {
-            let backend = &self.backends[*idx];
-            if *backend.is_healthy.read().await {
-                let selected_backend = backend.clone();
-                *idx = (*idx + 1) % total_backends;
-                return Some(selected_backend);
-            }
-            *idx = (*idx + 1) % total_backends;
-        }
-        None
     }
 
     pub async fn start_health_checks(&self, health_uri: String, interval: u64, timeout: u64) {
@@ -200,17 +210,15 @@ impl ReverseProxyState {
     }
 }
 
-
 const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
-
-fn generate_number_from_string(input: &str, max: u32) -> u32 {
-// use FNV-1a algorithm
+fn generate_number_from_octet(octets: [u8; 4], max: u32) -> u32 {
     let mut hash: u64 = FNV_OFFSET_BASIS;
-    for byte in input.as_bytes() {
+    for byte in &octets {
         hash ^= *byte as u64;
         hash = hash.wrapping_mul(FNV_PRIME);
     }
 
     (hash % max as u64) as u32
 }
+

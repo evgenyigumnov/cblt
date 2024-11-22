@@ -3,11 +3,7 @@
        health_uri "/health"
        health_interval "10s"
        health_timeout "2s"
-       lb_policy "cookie" {
-           lb_cookie_name "my_sticky_cookie"
-           lb_cookie_path "/"
-           lb_cookie_max_age "3600"
-       }
+       lb_policy "round_robin"  //  "ip_hash"
     }
     root "*" "./assets"
     file_server
