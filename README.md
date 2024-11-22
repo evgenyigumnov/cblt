@@ -18,6 +18,7 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 - Redirects
 - Reload configuration without downtime
 - Range requests for static files
+- Load Balancer (Round Robin, IP Hash)
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
@@ -83,6 +84,22 @@ curl -v -H "Range: bytes=0-499" http://127.0.0.1/logo.png
     redir "https://127.0.0.1{uri}"
 }
 ```
+
+### Load Balancer
+```kdl
+"*:80" {
+    reverse_proxy "/http/*" "http://127.0.0.1:8080" "http://127.0.0.1:8081" {
+        health_uri "/health"
+        health_interval "10s"
+        health_timeout "2s"
+        lb_policy "round_robin"  //  "ip_hash"
+    }
+    root "*" "./assets"
+    file_server
+}
+```
+
+
 
 ## Benchmark
 Do test with Apache Benchmark (ab) for 3000 requests with 1000 concurrent connections. Download 23kb image from 127.0.0.1/logo.png
