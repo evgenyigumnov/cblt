@@ -160,25 +160,25 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
             match name {
                 "health_uri" => {
                     let args = get_string_args(child);
-                    if let Some(uri) = args.get(0) {
+                    if let Some(uri) = args.first() {
                         options.health_uri = Some((*uri).to_string());
                     }
                 }
                 "health_interval" => {
                     let args = get_string_args(child);
-                    if let Some(interval) = args.get(0) {
+                    if let Some(interval) = args.first() {
                         options.health_interval = Some((*interval).to_string());
                     }
                 }
                 "health_timeout" => {
                     let args = get_string_args(child);
-                    if let Some(timeout) = args.get(0) {
+                    if let Some(timeout) = args.first() {
                         options.health_timeout = Some((*timeout).to_string());
                     }
                 }
                 "lb_policy" => {
                     let args = get_string_args(child);
-                    if let Some(policy_name) = args.get(0) {
+                    if let Some(policy_name) = args.first() {
                         match *policy_name {
                             "round_robin" => {
                                 options.lb_policy = Some(LoadBalancePolicy::RoundRobin);

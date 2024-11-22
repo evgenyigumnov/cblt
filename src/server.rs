@@ -92,8 +92,8 @@ impl ServerWorker {
             lock: Arc::new(SettingsLock {
                 settings: RwLock::new(
                     ServerSettings {
-                        hosts: host_details.into(),
-                        tls_acceptor: tls_acceptor.into(),
+                        hosts: host_details,
+                        tls_acceptor,
                     }
                     .into(),
                 ),
@@ -138,8 +138,8 @@ impl ServerWorker {
         self.lock
             .update(
                 ServerSettings {
-                    hosts: host_details.into(),
-                    tls_acceptor: tls_acceptor.into(),
+                    hosts: host_details,
+                    tls_acceptor,
                 }
                 .into(),
             )
@@ -232,7 +232,7 @@ async fn init_server(
                         error!("Error: {}", err);
                     }
                 }
-                Some(ref acceptor) => match acceptor.accept(stream).await {
+                Some(acceptor) => match acceptor.accept(stream).await {
                     Ok(mut stream) => {
                         if let Err(err) = directive_process(
                             &mut stream,

@@ -163,15 +163,13 @@ impl ServerSupervisor {
             if let Some(worker) = self.workers.get_mut(&port) {
                 worker.update(server.hosts, server.cert, server.key).await?;
                 info!("Server worker updated on port: {}", port);
-            } else {
-                if let Ok(server_worker) = ServerWorker::new(server.clone()).await {
-                    if let Err(err) = server_worker.run(args.max_connections).await {
-                        error!("Error: {}", err);
-                    }
-                    self.workers.insert(port, server_worker);
-                } else {
-                    error!("Error creating server worker");
+            } else if let Ok(server_worker) = ServerWorker::new(server.clone()).await {
+                if let Err(err) = server_worker.run(args.max_connections).await {
+                    error!("Error: {}", err);
                 }
+                self.workers.insert(port, server_worker);
+            } else {
+                error!("Error creating server worker");
             }
         }
 
@@ -199,17 +197,9 @@ fn build_servers(
         let parsed_host = ParsedHost::from_str(&host);
         let port = parsed_host.port.unwrap_or(port);
         debug!("Host: {}, Port: {}", host, port);
-        let cert_path = if let Some(path) = cert_path {
-            Some(path)
-        } else {
-            None
-        };
+        let cert_path = cert_path;
 
-        let key_path = if let Some(path) = key_path {
-            Some(path)
-        } else {
-            None
-        };
+        let key_path = key_path;
 
         match servers.entry(port) {
             Entry::Occupied(mut server) => {

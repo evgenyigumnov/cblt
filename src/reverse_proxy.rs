@@ -136,8 +136,8 @@ impl ReverseProxyState {
                     let backend = &self.backends[*idx];
                     if *backend.is_healthy.read().await {
                         *idx = (*idx + 1) % total_backends;
-                        return Ok(heapless::String::from_str(backend.url.as_str())
-                            .map_err(|_| CbltError::HeaplessError {})?);
+                        return heapless::String::from_str(backend.url.as_str())
+                            .map_err(|_| CbltError::HeaplessError {});
                     }
                     *idx = (*idx + 1) % total_backends;
                 }
@@ -160,31 +160,29 @@ impl ReverseProxyState {
                     generate_number_from_octet(addr_octets, self.backends.len() as u32);
                 let backend = &self.backends[backend_idx as usize];
                 if *backend.is_healthy.read().await {
-                    return Ok(heapless::String::from_str(backend.url.as_str())
-                        .map_err(|_| CbltError::HeaplessError {})?);
-                } else {
-                    if backend_idx == self.backends.len() as u32 - 1 {
-                        let backend = &self.backends[0 as usize];
-                        if *backend.is_healthy.read().await {
-                            return Ok(heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {})?);
-                        } else {
-                            return Err(CbltError::ResponseError {
-                                details: "No healthy backends".to_string(),
-                                status_code: StatusCode::BAD_GATEWAY,
-                            });
-                        }
+                    return heapless::String::from_str(backend.url.as_str())
+                        .map_err(|_| CbltError::HeaplessError {});
+                } else if backend_idx == self.backends.len() as u32 - 1 {
+                    let backend = &self.backends[0_usize];
+                    if *backend.is_healthy.read().await {
+                        return heapless::String::from_str(backend.url.as_str())
+                            .map_err(|_| CbltError::HeaplessError {});
                     } else {
-                        let backend = &self.backends[(backend_idx + 1) as usize];
-                        if *backend.is_healthy.read().await {
-                            return Ok(heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {})?);
-                        } else {
-                            return Err(CbltError::ResponseError {
-                                details: "No healthy backends".to_string(),
-                                status_code: StatusCode::BAD_GATEWAY,
-                            });
-                        }
+                        Err(CbltError::ResponseError {
+                            details: "No healthy backends".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })
+                    }
+                } else {
+                    let backend = &self.backends[(backend_idx + 1) as usize];
+                    if *backend.is_healthy.read().await {
+                        return heapless::String::from_str(backend.url.as_str())
+                            .map_err(|_| CbltError::HeaplessError {});
+                    } else {
+                        Err(CbltError::ResponseError {
+                            details: "No healthy backends".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })
                     }
                 }
             }
