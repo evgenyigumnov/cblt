@@ -25,7 +25,7 @@ async fn main() {
 }
 
 async fn echo_handler(Json(payload): Json<Value>) -> impl IntoResponse {
-    println!("{:?}", payload);
+    // println!("{:?}", payload);
     Json(payload)
 }
 

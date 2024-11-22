@@ -3,7 +3,7 @@ use crate::{matches_pattern, CbltError};
 use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
 use log::debug;
-use reqwest::{Client, Error};
+use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
 use tracing::instrument;
