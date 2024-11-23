@@ -1,10 +1,10 @@
 "*:80" {
-    reverse_proxy "/http/*" "http://127.0.0.1:8080" "http://127.0.0.1:8081" {
-       health_uri "/health"
-       health_interval "10s"
-       health_timeout "2s"
-       lb_policy "round_robin"  //  "ip_hash"
-    }
+//    reverse_proxy "/http/*" "http://127.0.0.1:8080" "http://127.0.0.1:8081" {
+//       health_uri "/health"
+//       health_interval "10s"
+//       health_timeout "2s"
+//       lb_policy "round_robin"  //  "ip_hash"
+//    }
     root "*" "./assets"
     file_server
 }
