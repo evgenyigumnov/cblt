@@ -91,6 +91,7 @@ use crate::config::LoadBalancePolicy;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -105,6 +106,7 @@ pub struct ReverseProxyState {
     pub lb_policy: LoadBalancePolicy,
     pub current_backend: Arc<RwLock<usize>>, // For Round Robin
     pub client: Client,
+    pub is_running_check: Arc<AtomicBool>,
 }
 
 impl ReverseProxyState {
@@ -120,6 +122,7 @@ impl ReverseProxyState {
             lb_policy,
             current_backend: Arc::new(RwLock::new(0)),
             client,
+            is_running_check: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -192,11 +195,12 @@ impl ReverseProxyState {
     pub async fn start_health_checks(&self, health_uri: String, interval: u64, timeout: u64) {
         let client = self.client.clone();
         let backends = self.backends.clone();
+        let is_running_clone = self.is_running_check.clone();
 
         tokio::spawn(async move {
             let interval = tokio::time::Duration::from_secs(interval);
             let timeout = tokio::time::Duration::from_secs(timeout);
-            loop {
+            while is_running_clone.load(Ordering::SeqCst) {
                 for backend in &backends {
                     let url = format!("{}{}", backend.url, health_uri);
                     let is_healthy = backend.is_healthy.clone();

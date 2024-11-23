@@ -159,6 +159,22 @@ impl ServerSupervisor {
         args: Arc<Args>,
         servers: HashMap<u16, Server>,
     ) -> Result<(), CbltError> {
+        let for_stop: Vec<u16> = self
+            .workers
+            .keys()
+            .filter(|port| !servers.contains_key(port))
+            .map(|port| *port)
+            .collect();
+        for port in for_stop {
+            if let Some(worker) = self.workers.remove(&port) {
+                worker
+                    .is_running
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                worker.notify_stop.notify_one();
+                info!("Server worker stopped on port: {}", port);
+            }
+        }
+
         for (port, server) in servers {
             if let Some(worker) = self.workers.get_mut(&port) {
                 worker.update(server.hosts, server.cert, server.key).await?;

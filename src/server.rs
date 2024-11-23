@@ -8,9 +8,10 @@ use humantime::Duration;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{Notify, RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -26,6 +27,8 @@ pub struct Server {
 pub struct ServerWorker {
     pub port: u16,
     pub lock: Arc<SettingsLock>,
+    pub is_running: Arc<AtomicBool>,
+    pub notify_stop: Arc<Notify>,
 }
 
 pub struct SettingsLock {
@@ -34,6 +37,11 @@ pub struct SettingsLock {
 
 impl SettingsLock {
     async fn update(&self, s: Arc<ServerSettings>) {
+        for (_, details) in &self.settings.read().await.hosts {
+            for (_, state) in &details.reverse_proxy_states {
+                state.is_running_check.store(false, Ordering::SeqCst);
+            }
+        }
         let mut settings = self.settings.write().await;
         *settings = s;
     }
@@ -98,6 +106,8 @@ impl ServerWorker {
                     .into(),
                 ),
             }),
+            is_running: Arc::new(AtomicBool::new(true)),
+            notify_stop: Arc::new(Notify::new()),
         })
     }
 
@@ -105,9 +115,13 @@ impl ServerWorker {
     pub async fn run(&self, max_connections: usize) -> Result<(), CbltError> {
         let port = self.port;
         let settings = self.lock.clone();
+        let is_running = self.is_running.clone();
+        let notify_stop = self.notify_stop.clone();
 
         tokio::spawn(async move {
-            if let Err(err) = init_server(port, settings, max_connections).await {
+            if let Err(err) =
+                init_server(port, settings, max_connections, is_running, notify_stop).await
+            {
                 error!("Error: {}", err);
             }
         });
@@ -202,6 +216,8 @@ async fn init_server(
     port: u16,
     settings_lock: Arc<SettingsLock>,
     max_connections: usize,
+    is_running: Arc<AtomicBool>,
+    notify_stop: Arc<Notify>,
 ) -> Result<(), CbltError> {
     let semaphore = Arc::new(Semaphore::new(max_connections));
     let addr = format!("0.0.0.0:{}", port);
@@ -209,49 +225,58 @@ async fn init_server(
     info!("Listening on port: {}", port);
     let client_reqwest = reqwest::Client::new();
 
-    loop {
+    while is_running.load(Ordering::SeqCst) {
         let client_reqwest = client_reqwest.clone();
-        let (mut stream, addr) = listener.accept().await?;
-        let permit = semaphore.clone().acquire_owned().await?;
-        let settings = settings_lock.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            let settings = settings.get().await;
-            let acceptor = settings.tls_acceptor.clone();
-            match acceptor.as_ref() {
-                None => {
-                    if let Err(err) = directive_process(
-                        &mut stream,
-                        settings.clone(),
-                        client_reqwest.clone(),
-                        addr,
-                    )
-                    .await
-                    {
-                        #[cfg(debug_assertions)]
-                        error!("Error: {}", err);
-                    }
-                }
-                Some(acceptor) => match acceptor.accept(stream).await {
-                    Ok(mut stream) => {
-                        if let Err(err) = directive_process(
-                            &mut stream,
-                            settings.clone(),
-                            client_reqwest.clone(),
-                            addr,
-                        )
-                        .await
-                        {
-                            #[cfg(debug_assertions)]
-                            error!("Error: {}", err);
+        // let (mut stream, addr) = listener.accept().await?;
+        tokio::select! {
+            _ = notify_stop.notified() => {
+                break;
+            },
+            Ok((mut stream, addr)) =  listener.accept() => {
+                let permit = semaphore.clone().acquire_owned().await?;
+                let settings = settings_lock.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    let settings = settings.get().await;
+                    let acceptor = settings.tls_acceptor.clone();
+                    match acceptor.as_ref() {
+                        None => {
+                            if let Err(err) = directive_process(
+                                &mut stream,
+                                settings.clone(),
+                                client_reqwest.clone(),
+                                addr,
+                            )
+                            .await
+                            {
+                                #[cfg(debug_assertions)]
+                                error!("Error: {}", err);
+                            }
                         }
+                        Some(acceptor) => match acceptor.accept(stream).await {
+                            Ok(mut stream) => {
+                                if let Err(err) = directive_process(
+                                    &mut stream,
+                                    settings.clone(),
+                                    client_reqwest.clone(),
+                                    addr,
+                                )
+                                .await
+                                {
+                                    #[cfg(debug_assertions)]
+                                    error!("Error: {}", err);
+                                }
+                            }
+                            Err(err) => {
+                                #[cfg(debug_assertions)]
+                                error!("TLS Error: {}", err);
+                            }
+                        },
                     }
-                    Err(err) => {
-                        #[cfg(debug_assertions)]
-                        error!("TLS Error: {}", err);
-                    }
-                },
+                });
+
             }
-        });
+        }
     }
+    Ok(())
 }
