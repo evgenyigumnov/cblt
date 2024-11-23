@@ -37,8 +37,8 @@ pub struct SettingsLock {
 
 impl SettingsLock {
     async fn update(&self, s: Arc<ServerSettings>) {
-        for (_, details) in &self.settings.read().await.hosts {
-            for (_, state) in &details.reverse_proxy_states {
+        for details in self.settings.read().await.hosts.values() {
+            for state in details.reverse_proxy_states.values() {
                 state.is_running_check.store(false, Ordering::SeqCst);
             }
         }

@@ -162,8 +162,7 @@ impl ServerSupervisor {
         let for_stop: Vec<u16> = self
             .workers
             .keys()
-            .filter(|port| !servers.contains_key(port))
-            .map(|port| *port)
+            .filter(|port| !servers.contains_key(port)).copied()
             .collect();
         for port in for_stop {
             if let Some(worker) = self.workers.remove(&port) {
