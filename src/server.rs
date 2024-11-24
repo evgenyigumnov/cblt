@@ -202,8 +202,8 @@ async fn init_proxy_states(
                         .start_health_checks(health_uri.clone(), interval, timeout)
                         .await;
 
-                    reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
                 }
+                reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
             }
             _ => continue,
         }
