@@ -10,11 +10,14 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use reqwest::ClientBuilder;
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
+
+const REVERSE_PROXY_MAX_IDLE_CONNECTIONS: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct Server {
@@ -226,8 +229,9 @@ async fn init_server(
     let client_reqwest = reqwest::Client::new();
 
     while is_running.load(Ordering::SeqCst) {
-        let client_reqwest = client_reqwest.clone();
-        // let (mut stream, addr) = listener.accept().await?;
+        let client_reqwest = ClientBuilder::new()
+            .pool_max_idle_per_host(REVERSE_PROXY_MAX_IDLE_CONNECTIONS)
+            .build()?;
         tokio::select! {
             _ = notify_stop.notified() => {
                 break;
