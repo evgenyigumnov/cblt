@@ -34,4 +34,4 @@ COPY ./Cbltfile ./etc/Cbltfile
 EXPOSE 80
 EXPOSE 443
 
-CMD ["./cblt", "--cfg", "./etc/Cbltfile"]
+ENTRYPOINT ["sh", "-c", "ulimit -n 10000 && ./cblt --cfg ./etc/Cbltfile"]

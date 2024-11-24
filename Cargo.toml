@@ -1,6 +1,6 @@
 [package]
 name = "cblt"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 
 authors = ["Evgeny Igumnov <igumnovnsk@gmail.com>"]
@@ -41,6 +41,7 @@ thiserror = "2.0.3"
 anyhow = "1.0.93"
 heapless = "0.8.0"
 humantime = "2.1.0"
+fdlimit = "0.3.0"
 
 [features]
 default = []

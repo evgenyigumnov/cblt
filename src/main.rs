@@ -42,6 +42,7 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    fdlimit::raise_fd_limit()?;
     #[cfg(debug_assertions)]
     only_in_debug();
     #[cfg(not(debug_assertions))]

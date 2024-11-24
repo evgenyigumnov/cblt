@@ -226,12 +226,10 @@ async fn init_server(
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on port: {}", port);
-    let client_reqwest = reqwest::Client::new();
-
+    let client_reqwest = ClientBuilder::new()
+        .pool_max_idle_per_host(REVERSE_PROXY_MAX_IDLE_CONNECTIONS)
+        .build()?;
     while is_running.load(Ordering::SeqCst) {
-        let client_reqwest = ClientBuilder::new()
-            .pool_max_idle_per_host(REVERSE_PROXY_MAX_IDLE_CONNECTIONS)
-            .build()?;
         tokio::select! {
             _ = notify_stop.notified() => {
                 break;
@@ -239,6 +237,7 @@ async fn init_server(
             Ok((mut stream, addr)) =  listener.accept() => {
                 let permit = semaphore.clone().acquire_owned().await?;
                 let settings = settings_lock.clone();
+                let client_reqwest = client_reqwest.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let settings = settings.get().await;
