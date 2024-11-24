@@ -12,11 +12,11 @@
 
 
 use axum::{routing::post,routing::get, extract::Json, response::IntoResponse, Router};
-use serde_json::Value;
-
+use axum::body::Body;
+use axum::extract::Request;
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/*path", post(echo_handler)).route("/", post(echo_handler)).route("/health", get(health_handler));
+    let app = Router::new().route("/http/echo", post(echo_handler)).route("/http/echo",get(echo_handler)).route("/health", get(health_handler));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
         .await
         .unwrap();
@@ -24,12 +24,12 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn echo_handler(Json(payload): Json<Value>) -> impl IntoResponse {
-    // println!("{:?}", payload);
-    Json(payload)
+async fn echo_handler(req: Request<Body>) -> impl IntoResponse {
+    println!("Echo request");
+    "ok"
 }
 
 async fn health_handler() -> impl IntoResponse {
     println!("Health check");
-    "OK"
+    "ok"
 }
