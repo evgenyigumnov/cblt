@@ -142,6 +142,7 @@ where
     Err(CbltError::DirectiveNotMatched)
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn is_websocket_upgrade(request: &Request<BytesMut>) -> bool {
     if let Some(connection_header) = request.headers().get("Connection") {
         if connection_header.to_str().map(|s| s.to_ascii_lowercase().contains("upgrade")).unwrap_or(false) {
@@ -156,6 +157,7 @@ fn is_websocket_upgrade(request: &Request<BytesMut>) -> bool {
 }
 
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn request_to_bytes(request: &Request<BytesMut>) -> Result<Vec<u8>, CbltError> {
     let mut buf = Vec::new();
     // Write request line
@@ -179,6 +181,7 @@ fn request_to_bytes(request: &Request<BytesMut>) -> Result<Vec<u8>, CbltError> {
     Ok(buf)
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn socket_to_response<S>(socket: &mut S, buf: &mut BytesMut) -> Result<Response<()>, CbltError>
     where
         S: AsyncReadExt + Unpin,
@@ -260,6 +263,7 @@ pub struct ReverseProxyState {
 }
 
 impl ReverseProxyState {
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, client: Client) -> Self {
         Self {
             backends: backends
@@ -276,6 +280,7 @@ impl ReverseProxyState {
         }
     }
 
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn get_next_backend(
         &self,
         addr: SocketAddr,
@@ -342,6 +347,7 @@ impl ReverseProxyState {
         }
     }
 
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn start_health_checks(&self, health_uri: String, interval: u64, timeout: u64) {
         let client = self.client.clone();
         let backends = self.backends.clone();
@@ -379,6 +385,7 @@ impl ReverseProxyState {
 
 const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn generate_number_from_octet(octets: [u8; 4], max: u32) -> u32 {
     let mut hash: u64 = FNV_OFFSET_BASIS;
     for byte in &octets {

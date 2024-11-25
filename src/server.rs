@@ -39,6 +39,7 @@ pub struct SettingsLock {
 }
 
 impl SettingsLock {
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     async fn update(&self, s: Arc<ServerSettings>) {
         for details in self.settings.read().await.hosts.values() {
             for state in details.reverse_proxy_states.values() {
@@ -48,6 +49,7 @@ impl SettingsLock {
         let mut settings = self.settings.write().await;
         *settings = s;
     }
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     async fn get(&self) -> Arc<ServerSettings> {
         let settings = self.settings.read().await;
         settings.clone()
@@ -165,6 +167,7 @@ impl ServerWorker {
     }
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn init_proxy_states(
     directives: &Vec<Directive>,
 ) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
@@ -215,6 +218,7 @@ async fn init_proxy_states(
     Ok(reverse_proxy_states)
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn init_server(
     port: u16,
     settings_lock: Arc<SettingsLock>,
