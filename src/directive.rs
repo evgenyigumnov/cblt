@@ -7,7 +7,6 @@ use crate::{file_server, matches_pattern, reverse_proxy};
 use bytes::BytesMut;
 use http::{Response, StatusCode};
 use log::{debug, error};
-use reqwest::Client;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -18,7 +17,6 @@ use tracing::instrument;
 pub async fn directive_process<S>(
     socket: &mut S,
     settings: Arc<ServerSettings>,
-    client_reqwest: Client,
     addr: SocketAddr,
 ) -> Result<(), CbltError>
 where
@@ -127,7 +125,6 @@ where
                         match reverse_proxy::proxy_directive(
                             &request,
                             socket,
-                            client_reqwest.clone(),
                             &host_config.reverse_proxy_states,
                             addr,
                         )

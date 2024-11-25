@@ -1,7 +1,6 @@
-use crate::response::send_response_stream;
 use crate::{matches_pattern, CbltError};
 use bytes::BytesMut;
-use http::{Request, Response, StatusCode};
+use http::{Request, StatusCode};
 use log::debug;
 use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -13,7 +12,6 @@ pub const HEAPLESS_STRING_SIZE: usize = 100;
 pub async fn proxy_directive<S>(
     request: &Request<BytesMut>,
     socket: &mut S,
-    client_reqwest: Client,
     states: &HashMap<String, ReverseProxyState>,
     addr: SocketAddr,
 ) -> Result<StatusCode, CbltError>
@@ -36,41 +34,107 @@ where
                 #[cfg(debug_assertions)]
                 debug!("Destination URI: {}", dest_uri);
 
-                let mut req_builder =
-                    client_reqwest.request(request.method().clone(), dest_uri.as_str());
-                for (key, value) in request.headers().iter() {
-                    req_builder = req_builder.header(key, value);
-                }
-                let body = request.body();
-                if !body.is_empty() {
-                    req_builder = req_builder.body(body.to_vec());
+                // Parse the destination URI
+                let dest_uri_parsed =
+                    dest_uri
+                        .parse::<http::Uri>()
+                        .map_err(|e| CbltError::ResponseError {
+                            details: e.to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })?;
+                let host = dest_uri_parsed.host().ok_or(CbltError::ResponseError {
+                    details: "Invalid destination URI".to_string(),
+                    status_code: StatusCode::BAD_GATEWAY,
+                })?;
+                let port = dest_uri_parsed.port_u16().unwrap_or_else(|| {
+                    if dest_uri_parsed.scheme_str() == Some("https") {
+                        443
+                    } else {
+                        80
+                    }
+                });
+                let mut backend_addr: heapless::String<{ HEAPLESS_STRING_SIZE * 2 }> =
+                    heapless::String::new();
+                backend_addr
+                    .push_str(host)
+                    .map_err(|_| CbltError::HeaplessError {})?;
+                backend_addr
+                    .push_str(":")
+                    .map_err(|_| CbltError::HeaplessError {})?;
+                backend_addr
+                    .push_str(port.to_string().as_str())
+                    .map_err(|_| CbltError::HeaplessError {})?;
+                debug!("Connecting to backend at {}", backend_addr);
+
+                // Establish a TCP connection to the backend
+                let mut backend_stream =
+                    TcpStream::connect(backend_addr.as_str())
+                        .await
+                        .map_err(|e| CbltError::ResponseError {
+                            details: e.to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })?;
+
+                // Send the initial request to the backend
+                let request_bytes = request_to_bytes(request)?;
+                backend_stream
+                    .write_all(&request_bytes)
+                    .await
+                    .map_err(|e| CbltError::ResponseError {
+                        details: e.to_string(),
+                        status_code: StatusCode::BAD_GATEWAY,
+                    })?;
+
+                // Read the response from the backend
+                let mut backend_buf = BytesMut::with_capacity(8192);
+                let header_len = get_header_len(&mut backend_stream, &mut backend_buf).await?;
+
+                // Send the response headers back to the client
+                socket
+                    .write_all(&backend_buf[..header_len])
+                    .await
+                    .map_err(|e| CbltError::ResponseError {
+                        details: e.to_string(),
+                        status_code: StatusCode::BAD_GATEWAY,
+                    })?;
+
+                // If there's any body data already read, send it
+                if backend_buf.len() > header_len {
+                    socket
+                        .write_all(&backend_buf[header_len..])
+                        .await
+                        .map_err(|e| CbltError::ResponseError {
+                            details: e.to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })?;
                 }
 
-                match req_builder.send().await {
-                    Ok(resp) => {
-                        let status = resp.status();
-                        let headers = resp.headers();
-                        let mut response_builder = Response::builder().status(status);
-                        for (key, value) in headers.iter() {
-                            response_builder = response_builder.header(key, value);
-                        }
-                        let mut stream = resp.bytes_stream();
-                        let response = response_builder.body("")?;
-                        send_response_stream(socket, response, request, &mut stream).await?;
-                        if status != StatusCode::OK {
-                            return Err(CbltError::ResponseError {
-                                details: "Bad gateway".to_string(),
-                                status_code: status,
-                            });
-                        } else {
-                            return Ok(status);
-                        }
+                let (mut backend_read_half, mut backend_write_half) = backend_stream.split();
+                let (mut client_read_half, mut client_write_half) = tokio::io::split(socket);
+
+                let client_to_backend = async {
+                    let result =
+                        tokio::io::copy(&mut client_read_half, &mut backend_write_half).await;
+                    backend_write_half.shutdown().await.ok();
+                    result
+                };
+
+                let backend_to_client = async {
+                    let result =
+                        tokio::io::copy(&mut backend_read_half, &mut client_write_half).await;
+                    client_write_half.shutdown().await.ok();
+                    result
+                };
+
+                let (client_to_backend_res, backend_to_client_res) =
+                    tokio::join!(client_to_backend, backend_to_client);
+                match (client_to_backend_res, backend_to_client_res) {
+                    (Ok(_), Ok(_)) => {
+                        return Ok(StatusCode::OK);
                     }
-                    Err(err) => {
-                        #[cfg(debug_assertions)]
-                        debug!("Error: {:?}", err);
+                    _ => {
                         return Err(CbltError::ResponseError {
-                            details: err.to_string(),
+                            details: "Failed to copy data between client and backend".to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
                         });
                     }
@@ -87,12 +151,81 @@ where
     Err(CbltError::DirectiveNotMatched)
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+fn request_to_bytes(request: &Request<BytesMut>) -> Result<Vec<u8>, CbltError> {
+    let mut buf = Vec::new();
+    // Write request line
+    buf.extend_from_slice(request.method().as_str().as_bytes());
+    buf.extend_from_slice(b" ");
+    buf.extend_from_slice(
+        request
+            .uri()
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or("/")
+            .as_bytes(),
+    );
+    buf.extend_from_slice(b" HTTP/1.1\r\n");
+
+    // Write headers
+    for (key, value) in request.headers() {
+        buf.extend_from_slice(key.as_str().as_bytes());
+        buf.extend_from_slice(b": ");
+        buf.extend_from_slice(value.as_bytes());
+        buf.extend_from_slice(b"\r\n");
+    }
+    buf.extend_from_slice(b"\r\n");
+
+    // Write body
+    buf.extend_from_slice(request.body());
+
+    Ok(buf)
+}
+
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+async fn get_header_len<S>(socket: &mut S, buf: &mut BytesMut) -> Result<usize, CbltError>
+where
+    S: AsyncReadExt + Unpin,
+{
+    loop {
+        let bytes_read = socket.read_buf(buf).await.unwrap_or(0);
+        if bytes_read == 0 {
+            break;
+        }
+        // Try to parse the response
+        let mut headers = [httparse::EMPTY_HEADER; 64]; // Increased header capacity
+        let mut res = httparse::Response::new(&mut headers);
+
+        match res.parse(buf) {
+            Ok(httparse::Status::Complete(header_len)) => {
+                return Ok(header_len);
+            }
+            Ok(httparse::Status::Partial) => {
+                // Need to read more data
+                continue;
+            }
+            Err(e) => {
+                return Err(CbltError::ResponseError {
+                    details: e.to_string(),
+                    status_code: StatusCode::BAD_GATEWAY,
+                });
+            }
+        }
+    }
+
+    Err(CbltError::ResponseError {
+        details: "Failed to read response from backend".to_string(),
+        status_code: StatusCode::BAD_GATEWAY,
+    })
+}
+
 use crate::config::LoadBalancePolicy;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
@@ -110,6 +243,7 @@ pub struct ReverseProxyState {
 }
 
 impl ReverseProxyState {
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, client: Client) -> Self {
         Self {
             backends: backends
@@ -126,6 +260,7 @@ impl ReverseProxyState {
         }
     }
 
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn get_next_backend(
         &self,
         addr: SocketAddr,
@@ -192,6 +327,7 @@ impl ReverseProxyState {
         }
     }
 
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn start_health_checks(&self, health_uri: String, interval: u64, timeout: u64) {
         let client = self.client.clone();
         let backends = self.backends.clone();
@@ -202,11 +338,20 @@ impl ReverseProxyState {
             let timeout = tokio::time::Duration::from_secs(timeout);
             while is_running_clone.load(Ordering::SeqCst) {
                 for backend in &backends {
-                    let url = format!("{}{}", backend.url, health_uri);
+                    let mut url: heapless::String<{ HEAPLESS_STRING_SIZE * 2 }> =
+                        heapless::String::new();
+                    if let Err(err) = url.push_str(backend.url.as_str()) {
+                        log::error!("Error: {:?}", err);
+                        break;
+                    }
+                    if let Err(err) = url.push_str(health_uri.as_str()) {
+                        log::error!("Error: {:?}", err);
+                        break;
+                    }
                     let is_healthy = backend.is_healthy.clone();
                     let client = client.clone();
                     tokio::spawn(async move {
-                        let resp = client.get(&url).timeout(timeout).send().await;
+                        let resp = client.get(&*url).timeout(timeout).send().await;
                         let mut health = is_healthy.write().await;
                         *health = resp.is_ok()
                             && match resp {
@@ -229,6 +374,7 @@ impl ReverseProxyState {
 
 const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn generate_number_from_octet(octets: [u8; 4], max: u32) -> u32 {
     let mut hash: u64 = FNV_OFFSET_BASIS;
     for byte in &octets {

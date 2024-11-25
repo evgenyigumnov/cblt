@@ -144,6 +144,7 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
     Ok(hosts)
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn get_string_args<'a>(node: &'a KdlNode) -> Vec<&'a str> {
     node.entries()
         .iter()
@@ -151,6 +152,7 @@ fn get_string_args<'a>(node: &'a KdlNode) -> Vec<&'a str> {
         .collect::<Vec<&'a str>>()
 }
 
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, CbltError> {
     let mut options = ReverseProxyOptions::default();
 
