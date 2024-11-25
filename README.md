@@ -10,15 +10,16 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
 
 ## Features
 - **10 times faster than Nginx for small content under 100KB**
-- KDL Document Language configuration (**Cbltfile**)
-- Proxy requests to another server
+- Reload configuration without restarting
 - Serve files from a directory
 - TLS support
 - Gzip compression
+- Proxy requests to another server
+    - Load Balancer (Round Robin, IP Hash, health checks)
+    - Websocket support
 - Redirects
-- Reload configuration without downtime
 - Range requests for static files
-- Load Balancer (Round Robin, IP Hash)
+- KDL Document Language configuration (**Cbltfile**)
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
