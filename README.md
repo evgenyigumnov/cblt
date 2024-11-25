@@ -9,16 +9,17 @@ Safe and fast minimalistic web server, written in Rust, that serves files from a
 The name **Cblt** appears to be a good shortened version of **Cobalt**. It retains the association with the element and strength, while also looking modern and minimalist. 
 
 ## Features
-- **10 times faster than Nginx for small content under 100KB**
-- Reload configuration without restarting
+
 - Serve files from a directory
+  - **10 times faster than Nginx for small content under 100KB**
+  - Range requests for static files
+  - Gzip compression
+- Reload configuration without restarting
 - TLS support
-- Gzip compression
 - Proxy requests to another server
     - Load Balancer (Round Robin, IP Hash, health checks)
     - Websocket support
 - Redirects
-- Range requests for static files
 - KDL Document Language configuration (**Cbltfile**)
 
 ## Quick Start
