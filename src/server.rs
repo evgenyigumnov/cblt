@@ -10,14 +10,11 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use reqwest::ClientBuilder;
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, RwLock, Semaphore};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "trace")]
 use tracing::instrument;
-
-const REVERSE_PROXY_MAX_IDLE_CONNECTIONS: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct Server {
@@ -207,7 +204,6 @@ async fn init_proxy_states(
                     reverse_proxy_state
                         .start_health_checks(health_uri.clone(), interval, timeout)
                         .await;
-
                 }
                 reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
             }
@@ -230,9 +226,6 @@ async fn init_server(
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
     info!("Listening on port: {}", port);
-    let client_reqwest = ClientBuilder::new()
-        .pool_max_idle_per_host(REVERSE_PROXY_MAX_IDLE_CONNECTIONS)
-        .build()?;
     while is_running.load(Ordering::SeqCst) {
         tokio::select! {
             _ = notify_stop.notified() => {
@@ -241,7 +234,6 @@ async fn init_server(
             Ok((mut stream, addr)) =  listener.accept() => {
                 let permit = semaphore.clone().acquire_owned().await?;
                 let settings = settings_lock.clone();
-                let client_reqwest = client_reqwest.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let settings = settings.get().await;
@@ -251,7 +243,6 @@ async fn init_server(
                             if let Err(err) = directive_process(
                                 &mut stream,
                                 settings.clone(),
-                                client_reqwest.clone(),
                                 addr,
                             )
                             .await
@@ -265,7 +256,6 @@ async fn init_server(
                                 if let Err(err) = directive_process(
                                     &mut stream,
                                     settings.clone(),
-                                    client_reqwest.clone(),
                                     addr,
                                 )
                                 .await

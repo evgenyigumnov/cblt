@@ -121,73 +121,6 @@ fn gzip_support_detect(req_opt: &Request<BytesMut>) -> bool {
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-pub async fn send_response_stream<S, T>(
-    mut socket: &mut S,
-    response: Response<&str>,
-    req_opt: &Request<BytesMut>,
-    stream: &mut T,
-) -> Result<(), CbltError>
-where
-    S: AsyncWriteExt + Unpin,
-    T: futures_core::stream::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
-{
-    let (parts, _) = response.into_parts();
-
-    // Write status line without allocation
-    socket.write_all(b"HTTP/1.1 ").await?;
-    let mut itoa_buf = itoa::Buffer::new();
-    let status_str = itoa_buf.format(parts.status.as_u16());
-    socket.write_all(status_str.as_bytes()).await?;
-    socket.write_all(b" ").await?;
-    socket
-        .write_all(parts.status.canonical_reason().unwrap_or("").as_bytes())
-        .await?;
-
-    socket.write_all(b"\r\n").await?;
-    let gzip_supported = gzip_support_detect(req_opt);
-    if gzip_supported {
-        socket.write_all(b"Content-Encoding: gzip").await?;
-        socket.write_all(b"\r\n").await?;
-    }
-    // Write headers without allocation
-    for (key, value) in parts.headers.iter() {
-        debug!("{}: {}", key.as_str(), value.to_str()?);
-        socket.write_all(key.as_str().as_bytes()).await?;
-        socket.write_all(b": ").await?;
-        socket.write_all(value.as_bytes()).await?;
-        socket.write_all(b"\r\n").await?;
-    }
-
-    // End headers
-    socket.write_all(b"\r\n").await?;
-
-    // Ensure all headers are flushed
-    socket.flush().await?;
-
-    use futures_util::stream::StreamExt;
-    if gzip_supported {
-        debug!("Gzip supported");
-
-        let mut gzip_stream = GzipEncoder::new(&mut socket);
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            gzip_stream.write_all(&chunk).await?;
-        }
-        gzip_stream.shutdown().await?;
-        gzip_stream.flush().await?;
-    } else {
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            socket.write_all(&chunk).await?;
-        }
-    }
-    socket.flush().await?;
-
-    Ok(())
-}
-
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub fn log_request_response(request: &Request<BytesMut>, status_code: StatusCode) {
     let method = &request.method();
     let uri = request.uri();
@@ -248,6 +181,9 @@ pub fn error_response(status: StatusCode) -> Result<Response<BytesMut>, CbltErro
         StatusCode::BAD_REQUEST => "Bad request",
         StatusCode::FORBIDDEN => "Forbidden",
         StatusCode::NOT_FOUND => "Not found",
+        StatusCode::METHOD_NOT_ALLOWED => "Method not allowed",
+        StatusCode::INTERNAL_SERVER_ERROR => "Internal server error",
+        StatusCode::BAD_GATEWAY => "Bad gateway",
         _ => "Unknown error",
     };
     let bytes = BytesMut::from(msg);
