@@ -1,7 +1,7 @@
 use crate::config::{build_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use kdl::KdlDocument;
 use log::{debug, error, info};
 use std::collections::hash_map::Entry;
@@ -39,7 +39,18 @@ struct Args {
     /// Enable reload feature
     #[arg(long)]
     reload: bool,
+    /// Mode of operation (docker or config)
+    #[arg(long, default_value = "config", value_enum)]
+    mode: Mode, // Add the mode field
 }
+
+
+#[derive(ValueEnum, Clone, Debug)]
+enum Mode {
+    Docker,
+    Config,
+}
+
 
 fn main() -> anyhow::Result<()> {
     fdlimit::raise_fd_limit()?;
@@ -77,61 +88,92 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
-    let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
+    match args.mode {
+        Mode::Docker => {
+            info!("Running in Docker mode");
+            //       labels:
+            //         - "cblt.hosts=domain.com domain.org"
+            //         - "cblt.path=/api/*"
+            //         - "cblt.port=9000"
 
-    debug!("{:#?}", servers);
-    use tokio::sync::watch;
-
-    let (tx, mut rx) = watch::channel(servers);
-
-    let args_clone = args.clone();
-    tokio::spawn(async move {
-        let mut sever_supervisor = ServerSupervisor {
-            workers: HashMap::new(),
-        };
-
-        loop {
+            #[cfg(unix)]
             {
-                let servers = rx.borrow_and_update().clone();
-                if let Err(err) = &sever_supervisor
-                    .process_workers(args_clone.clone(), servers)
-                    .await
-                {
-                    error!("Error: {}", err);
-                    std::process::exit(0);
+                let mut docker = docker_sync::Docker::connect()?;
+
+                let containers =  docker.get_containers(false)?;
+                let mut servers: HashMap<u16, Server> = HashMap::new();
+                for container in containers {
+                    // let labels_opt: Option<HashMap<String, String>> = container.Labels;
+                    // let name = container.Names.get(0)?;
                 }
             }
 
-            if rx.changed().await.is_err() {
-                break;
-            }
+
         }
-    });
+        Mode::Config => {
+            info!("Running in Config mode");
 
-    let args = args.clone();
+            let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
 
-    tokio::spawn(async move {
-        let reload_file_path = Path::new("reload");
+            debug!("{:#?}", servers);
+            use tokio::sync::watch;
 
-        loop {
-            if reload_file_path.exists() {
-                match load_servers_from_config(args.clone()).await {
-                    Ok(servers) => {
-                        if let Err(err) = tx.send(servers) {
+            let (tx, mut rx) = watch::channel(servers);
+
+            let args_clone = args.clone();
+            tokio::spawn(async move {
+                let mut sever_supervisor = ServerSupervisor {
+                    workers: HashMap::new(),
+                };
+
+                loop {
+                    {
+                        let servers = rx.borrow_and_update().clone();
+                        if let Err(err) = &sever_supervisor
+                            .process_workers(args_clone.clone(), servers)
+                            .await
+                        {
                             error!("Error: {}", err);
-                        }
-                        if let Err(err) = std::fs::remove_file(reload_file_path) {
-                            error!("Error: {}", err);
+                            std::process::exit(0);
                         }
                     }
-                    Err(err) => {
-                        error!("Error: {}", err);
+
+                    if rx.changed().await.is_err() {
+                        break;
                     }
                 }
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            });
+
+            let args = args.clone();
+
+            tokio::spawn(async move {
+                let reload_file_path = Path::new("reload");
+
+                loop {
+                    if reload_file_path.exists() {
+                        match load_servers_from_config(args.clone()).await {
+                            Ok(servers) => {
+                                if let Err(err) = tx.send(servers) {
+                                    error!("Error: {}", err);
+                                }
+                                if let Err(err) = std::fs::remove_file(reload_file_path) {
+                                    error!("Error: {}", err);
+                                }
+                            }
+                            Err(err) => {
+                                error!("Error: {}", err);
+                            }
+                        }
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                }
+            });
+
         }
-    });
+    }
+
+
+
 
     info!("CBLT started");
     tokio::signal::ctrl_c().await?;
