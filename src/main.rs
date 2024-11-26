@@ -1,7 +1,7 @@
 use crate::config::{build_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use kdl::KdlDocument;
 use log::{debug, error, info};
 use std::collections::hash_map::Entry;
@@ -39,6 +39,16 @@ struct Args {
     /// Enable reload feature
     #[arg(long)]
     reload: bool,
+    /// Mode of operation (docker or config)
+    #[arg(long, default_value = "config", value_enum)]
+    mode: Mode, // Add the mode field
+}
+
+
+#[derive(ValueEnum, Clone, Debug, Eq, PartialEq)]
+enum Mode {
+    Docker,
+    Config,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -77,7 +87,11 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
-    let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
+    let servers: HashMap<u16, Server> = if args.mode == Mode::Docker {
+        load_reverse_proxy_from_docker(args.clone()).await?
+    } else {
+        load_servers_from_config(args.clone()).await?
+    };
 
     debug!("{:#?}", servers);
     use tokio::sync::watch;
@@ -114,18 +128,31 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
         let reload_file_path = Path::new("reload");
 
         loop {
-            if reload_file_path.exists() {
-                match load_servers_from_config(args.clone()).await {
+            if args.mode == Mode::Docker {
+                match load_reverse_proxy_from_docker(args.clone()).await {
                     Ok(servers) => {
                         if let Err(err) = tx.send(servers) {
-                            error!("Error: {}", err);
-                        }
-                        if let Err(err) = std::fs::remove_file(reload_file_path) {
                             error!("Error: {}", err);
                         }
                     }
                     Err(err) => {
                         error!("Error: {}", err);
+                    }
+                }
+            } else {
+                if reload_file_path.exists() {
+                    match load_servers_from_config(args.clone()).await {
+                        Ok(servers) => {
+                            if let Err(err) = tx.send(servers) {
+                                error!("Error: {}", err);
+                            }
+                            if let Err(err) = std::fs::remove_file(reload_file_path) {
+                                error!("Error: {}", err);
+                            }
+                        }
+                        Err(err) => {
+                            error!("Error: {}", err);
+                        }
                     }
                 }
             }
@@ -148,6 +175,14 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
 
     build_servers(config)
 }
+
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+async fn load_reverse_proxy_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
+    Ok(HashMap::new())
+}
+
+
+
 
 pub struct ServerSupervisor {
     workers: HashMap<u16, ServerWorker>,

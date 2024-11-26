@@ -43,6 +43,9 @@ heapless = "0.8.0"
 humantime = "2.1.0"
 fdlimit = "0.3.0"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+bollard = "0.18.1"
+
 [features]
 default = []
 trace = []
