@@ -74,4 +74,8 @@ pub enum CbltError {
     KdlParseError { details: String },
     #[error("HeaplessError")]
     HeaplessError,
+    #[error("ServiceNameNotFound")]
+    ServiceNameNotFound,
+    #[error("ContainerNameNotFound")]
+    ContainerNameNotFound,
 }

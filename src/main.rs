@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
+use bollard::container::ListContainersOptions;
 use bollard::service::ListServicesOptions;
 use tokio::fs;
 use tokio::runtime::Builder;
@@ -191,13 +192,34 @@ async fn load_reverse_proxy_from_docker(_args: Arc<Args>) -> Result<HashMap<u16,
     });
 
     let services = docker.list_services(options).await?;
-    // print containers
     for service in &services {
+        let mut service_name = None;
         if let Some(spec) = &service.spec {
             if let Some(labels) = &spec.labels {
                 for (label_k, label_v) in labels {
                     if label_k.starts_with("cblt.") {
-                        println!("{:?} {}: {}",spec.name, label_k, label_v);
+                        if service_name.is_none() {
+                            service_name = Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
+                            let containers = docker.list_containers(Some(ListContainersOptions::<String>{
+                                all: false,
+                                filters: HashMap::new(),
+                                ..Default::default()
+                            })).await?;
+                            for container in &containers {
+                                if let Some(names) = &container.names {
+                                    match names.iter().find(|name| name.starts_with(&format!("/{}.", service_name.unwrap()))) {
+                                        None => {}
+                                        Some(name_all) => {
+                                            let container_name = name_all.replace("/", "");
+                                            println!("{container_name}");
+                                        }
+                                    }
+                                } else {
+                                    return Err(CbltError::ContainerNameNotFound);
+                                }
+                            }
+                        }
+
                     }
                 }
             }
