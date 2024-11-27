@@ -17,8 +17,7 @@ services:
         - "cblt.strategy=round_robin"
         - "cblt.path=/api/*"
         - "cblt.port=9000"
-        - "cblt.secret.1=*.domain.com secret_key_2024 secret_cert_2024"
-        - "cblt.secret.2=domain.org secret_key_org_2024 secret_cert_org_2024"
+        - "cblt.secrets=*.domain.com secret_key_2024 secret_cert_2024, domain.org secret_key_org_2024 secret_cert_org_2024"
       restart_policy:
         condition: on-failure
     ports:
