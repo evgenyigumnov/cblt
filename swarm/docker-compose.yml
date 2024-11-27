@@ -9,10 +9,10 @@ services:
       mode: replicated
       replicas: 3
       labels:
-        - "cblt.hosts=*.domain.com domain.org"
+        - "cblt.hosts=*.domain.com, domain.org"
         - "cblt.policy=round_robin"
-        - "cblt.health_interval =2s"
-        - "cblt.health_timeout =1s"
+        - "cblt.health_interval=2s"
+        - "cblt.health_timeout=1s"
         - "cblt.health_uri =/helth"
         - "cblt.strategy=round_robin"
         - "cblt.path=/api/*"
