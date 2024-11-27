@@ -18,9 +18,18 @@ pub async fn proxy_directive<S>(
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
-    for (pattern, reverse_proxy_stat) in states {
+    let options = match directive {
+        Directive::ReverseProxy { pattern:_, destinations:_ , options } => {
+            options
+        }
+        _ => {
+            return Err(CbltError::DirectiveNotMatched);
+        }
+    };
+    for (pattern, reverse_proxy_state) in states {
         if matches_pattern(pattern, request.uri().path()) {
-            if let Ok(backend) = reverse_proxy_stat.get_next_backend(addr, directive).await {
+            if let Ok(backend) = reverse_proxy_state.get_next_backend(addr, directive).await {
+                #[cfg(debug_assertions)]
                 debug!("Selected backend: {:?}", backend);
                 let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> =
                     heapless::String::new();
@@ -64,79 +73,86 @@ where
                 backend_addr
                     .push_str(port.to_string().as_str())
                     .map_err(|_| CbltError::HeaplessError {})?;
+                #[cfg(debug_assertions)]
                 debug!("Connecting to backend at {}", backend_addr);
 
                 // Establish a TCP connection to the backend
-                let mut backend_stream =
-                    TcpStream::connect(backend_addr.as_str())
-                        .await
-                        .map_err(|e| CbltError::ResponseError {
+                let timeout_duration = Duration::from_secs(options.lb_timeout);
+                match timeout(timeout_duration, TcpStream::connect(backend_addr.as_str())).await {
+                    Ok(backend_stream_result) => {
+                        let mut backend_stream = backend_stream_result.map_err(|e| CbltError::ResponseError {
                             details: e.to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
                         })?;
 
-                // Send the initial request to the backend
-                let request_bytes = request_to_bytes(request)?;
-                backend_stream
-                    .write_all(&request_bytes)
-                    .await
-                    .map_err(|e| CbltError::ResponseError {
-                        details: e.to_string(),
-                        status_code: StatusCode::BAD_GATEWAY,
-                    })?;
+                        // Send the initial request to the backend
+                        let request_bytes = request_to_bytes(request)?;
+                        backend_stream
+                            .write_all(&request_bytes)
+                            .await
+                            .map_err(|e| CbltError::ResponseError {
+                                details: e.to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            })?;
 
-                // Read the response from the backend
-                let mut backend_buf = BytesMut::with_capacity(8192);
-                let header_len = get_header_len(&mut backend_stream, &mut backend_buf).await?;
+                        // Read the response from the backend
+                        let mut backend_buf = BytesMut::with_capacity(8192);
+                        let header_len = get_header_len(&mut backend_stream, &mut backend_buf).await?;
 
-                // Send the response headers back to the client
-                socket
-                    .write_all(&backend_buf[..header_len])
-                    .await
-                    .map_err(|e| CbltError::ResponseError {
-                        details: e.to_string(),
-                        status_code: StatusCode::BAD_GATEWAY,
-                    })?;
+                        // Send the response headers back to the client
+                        socket
+                            .write_all(&backend_buf[..header_len])
+                            .await
+                            .map_err(|e| CbltError::ResponseError {
+                                details: e.to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            })?;
 
-                // If there's any body data already read, send it
-                if backend_buf.len() > header_len {
-                    socket
-                        .write_all(&backend_buf[header_len..])
-                        .await
-                        .map_err(|e| CbltError::ResponseError {
-                            details: e.to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        })?;
-                }
+                        // If there's any body data already read, send it
+                        if backend_buf.len() > header_len {
+                            socket
+                                .write_all(&backend_buf[header_len..])
+                                .await
+                                .map_err(|e| CbltError::ResponseError {
+                                    details: e.to_string(),
+                                    status_code: StatusCode::BAD_GATEWAY,
+                                })?;
+                        }
 
-                let (mut backend_read_half, mut backend_write_half) = backend_stream.split();
-                let (mut client_read_half, mut client_write_half) = tokio::io::split(socket);
+                        let (mut backend_read_half, mut backend_write_half) = backend_stream.split();
+                        let (mut client_read_half, mut client_write_half) = tokio::io::split(socket);
 
-                let client_to_backend = async {
-                    let result =
-                        tokio::io::copy(&mut client_read_half, &mut backend_write_half).await;
-                    backend_write_half.shutdown().await.ok();
-                    result
-                };
+                        let client_to_backend = async {
+                            let result =
+                                tokio::io::copy(&mut client_read_half, &mut backend_write_half).await;
+                            backend_write_half.shutdown().await.ok();
+                            result
+                        };
 
-                let backend_to_client = async {
-                    let result =
-                        tokio::io::copy(&mut backend_read_half, &mut client_write_half).await;
-                    client_write_half.shutdown().await.ok();
-                    result
-                };
+                        let backend_to_client = async {
+                            let result =
+                                tokio::io::copy(&mut backend_read_half, &mut client_write_half).await;
+                            client_write_half.shutdown().await.ok();
+                            result
+                        };
 
-                let (client_to_backend_res, backend_to_client_res) =
-                    tokio::join!(client_to_backend, backend_to_client);
-                match (client_to_backend_res, backend_to_client_res) {
-                    (Ok(_), Ok(_)) => {
-                        return Ok(StatusCode::OK);
+                        let (client_to_backend_res, backend_to_client_res) =
+                            tokio::join!(client_to_backend, backend_to_client);
+                        match (client_to_backend_res, backend_to_client_res) {
+                            (Ok(_), Ok(_)) => {
+                                return Ok(StatusCode::OK);
+                            }
+                            _ => {
+                                return Err(CbltError::ResponseError {
+                                    details: "Failed to copy data between client and backend".to_string(),
+                                    status_code: StatusCode::BAD_GATEWAY,
+                                });
+                            }
+                        }
+
                     }
-                    _ => {
-                        return Err(CbltError::ResponseError {
-                            details: "Failed to copy data between client and backend".to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        });
+                    Err(err) => {
+                        reverse_proxy_state.set_dead_backend(&backend);
                     }
                 }
             } else {
@@ -224,8 +240,10 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
+use tokio::time::timeout;
 
 
 #[derive(Debug, Clone)]
@@ -267,6 +285,14 @@ impl ReverseProxyState {
             lb_policy,
             current_backend: Arc::new(RwLock::new(0)),
         })
+    }
+    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+    pub async fn set_dead_backend(&self, live_backend: &LiveBackend) -> Result<(), CbltError> {
+        let now_timestamp_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+        let backend = &self.backends[live_backend.backend_index];
+        *backend.alive_state.write().await = AliveState::Dead(now_timestamp_seconds);
+        Ok(())
     }
 
 

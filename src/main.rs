@@ -95,6 +95,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
         load_servers_from_config(args.clone()).await?
     };
 
+    #[cfg(debug_assertions)]
     debug!("{:#?}", servers);
     use tokio::sync::watch;
 
@@ -295,6 +296,7 @@ fn build_servers(
         });
         let parsed_host = ParsedHost::from_str(&host);
         let port = parsed_host.port.unwrap_or(port);
+        #[cfg(debug_assertions)]
         debug!("Host: {}, Port: {}", host, port);
         let cert_path = cert_path;
 
