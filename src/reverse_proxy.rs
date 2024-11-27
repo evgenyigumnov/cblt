@@ -21,12 +21,12 @@ where
 {
     for (pattern, reverse_proxy_stat) in states {
         if matches_pattern(pattern, request.uri().path()) {
-            if let Ok(destination) = reverse_proxy_stat.get_next_backend(addr, directive).await {
-                debug!("Selected backend: {:?}", destination);
+            if let Ok(backend) = reverse_proxy_stat.get_next_backend(addr, directive).await {
+                debug!("Selected backend: {:?}", backend);
                 let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> =
                     heapless::String::new();
                 dest_uri
-                    .push_str(destination.as_str())
+                    .push_str(backend.address.as_str())
                     .map_err(|_| CbltError::HeaplessError {})?;
                 dest_uri
                     .push_str(request.uri().path())
@@ -224,7 +224,6 @@ use crate::config::{Directive, LoadBalancePolicy};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
@@ -248,6 +247,7 @@ pub struct ReverseProxyState {
     pub current_backend: Arc<RwLock<usize>>, // For Round Robin
     pub client: Client,
 }
+#[derive(Debug, Clone)]
 pub struct AliveBackend {
     address: heapless::String<HEAPLESS_STRING_SIZE>,
     index: usize,
@@ -278,7 +278,7 @@ impl ReverseProxyState {
         &self,
         addr: SocketAddr,
         directive: &Directive,
-    ) -> Result<heapless::String<HEAPLESS_STRING_SIZE>, CbltError> {
+    ) -> Result<AliveBackend, CbltError> {
         let options = match directive {
             Directive::ReverseProxy { pattern, destinations, options } => {
                 options
@@ -297,9 +297,13 @@ impl ReverseProxyState {
                     let mut need_write = false;
                     match *backend.alive_state.read().await {
                         AliveState::Alive(timestamp) => {
+                            let alive_backend = AliveBackend {
+                                address: heapless::String::from_str(backend.url.as_str())
+                                    .map_err(|_| CbltError::HeaplessError {})?,
+                                index: *idx,
+                            };
                             *idx = (*idx + 1) % total_backends;
-                            return heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {});
+                            return Ok(alive_backend);
                         }
                         AliveState::Dead(timestamp) => {
                             let now_timestamp_seconds = std::time::SystemTime::now()
@@ -316,18 +320,26 @@ impl ReverseProxyState {
                         let mut lock = backend.alive_state.write().await;
                         match *lock {
                             AliveState::Alive(timestamp) => {
+                                let alive_backend = AliveBackend {
+                                    address: heapless::String::from_str(backend.url.as_str())
+                                        .map_err(|_| CbltError::HeaplessError {})?,
+                                    index: *idx,
+                                };
                                 *idx = (*idx + 1) % total_backends;
-                                return heapless::String::from_str(backend.url.as_str())
-                                    .map_err(|_| CbltError::HeaplessError {});
+                                return Ok(alive_backend);
                             }
                             AliveState::Dead(timestamp) => {
                                 let now_timestamp_seconds = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)?.as_secs();
                                 if now_timestamp_seconds > (timestamp + options.lb_interval) {
                                     *lock = AliveState::Alive(now_timestamp_seconds);
+                                    let alive_backend = AliveBackend {
+                                        address: heapless::String::from_str(backend.url.as_str())
+                                            .map_err(|_| CbltError::HeaplessError {})?,
+                                        index: *idx,
+                                    };
                                     *idx = (*idx + 1) % total_backends;
-                                    return heapless::String::from_str(backend.url.as_str())
-                                        .map_err(|_| CbltError::HeaplessError {});
+                                    return Ok(alive_backend);
                                 } else {
                                     *idx = (*idx + 1) % total_backends;
                                 }
@@ -355,8 +367,11 @@ impl ReverseProxyState {
 
                 match *backend.alive_state.read().await {
                     AliveState::Alive(timestamp) => {
-                        return heapless::String::from_str(backend.url.as_str())
-                            .map_err(|_| CbltError::HeaplessError {});
+                        return Ok(AliveBackend {
+                            address: heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {})?,
+                            index: backend_idx as usize
+                        });
                     }
                     AliveState::Dead(timestamp) => {
                         let now_timestamp_seconds = std::time::SystemTime::now()
@@ -364,8 +379,11 @@ impl ReverseProxyState {
                         if now_timestamp_seconds > (timestamp + options.lb_interval) {
                             // change backend
                         } else {
-                            return heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {});
+                            return Ok(AliveBackend {
+                                address: heapless::String::from_str(backend.url.as_str())
+                                    .map_err(|_| CbltError::HeaplessError {})?,
+                                index: backend_idx as usize,
+                            });
                         }
                     }
                 }
@@ -374,16 +392,22 @@ impl ReverseProxyState {
                     let mut lock = backend.alive_state.write().await;
                     match *lock {
                         AliveState::Alive(timestamp) => {
-                            return heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {});
+                            return Ok(AliveBackend {
+                                address: heapless::String::from_str(backend.url.as_str())
+                                    .map_err(|_| CbltError::HeaplessError {})?,
+                                index: backend_idx as usize,
+                            });
                         }
                         AliveState::Dead(timestamp) => {
                             let now_timestamp_seconds = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)?.as_secs();
                             if now_timestamp_seconds > (timestamp + options.lb_interval) {
                                 *lock = AliveState::Alive(now_timestamp_seconds);
-                                return heapless::String::from_str(backend.url.as_str())
-                                    .map_err(|_| CbltError::HeaplessError {});
+                                return Ok(AliveBackend {
+                                    address: heapless::String::from_str(backend.url.as_str())
+                                        .map_err(|_| CbltError::HeaplessError {})?,
+                                    index: backend_idx as usize,
+                                });
                             } else {
                                 // take next
                             }
@@ -399,21 +423,17 @@ impl ReverseProxyState {
                 let backend = &self.backends[backend_idx as usize];
                 match *backend.alive_state.read().await {
                     AliveState::Alive(timestamp) => {
-                        return heapless::String::from_str(backend.url.as_str())
-                            .map_err(|_| CbltError::HeaplessError {});
+                        return Ok(AliveBackend {
+                            address: heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {})?,
+                            index: backend_idx as usize,
+                        });
                     }
                     AliveState::Dead(timestamp) => {
-                        let now_timestamp_seconds = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
-                        if now_timestamp_seconds > (timestamp + options.lb_interval) {
-                            return Err(CbltError::ResponseError {
-                                details: "No healthy backends".to_string(),
-                                status_code: StatusCode::BAD_GATEWAY,
-                            });
-                        } else {
-                            return heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {});
-                        }
+                        return Err(CbltError::ResponseError {
+                            details: "No healthy backends".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })
                     }
                 }
 
