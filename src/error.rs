@@ -39,6 +39,13 @@ pub enum CbltError {
         #[from]
         source: rustls::Error,
     },
+    // from bollard::errors::Error
+    #[error("BollardError: {source:?}")]
+    BollardError {
+        #[from]
+        source: bollard::errors::Error,
+    },
+
     // from pki_types::pem::Error
     #[error("PemError: {source:?}")]
     PemError {

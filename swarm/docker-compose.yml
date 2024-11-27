@@ -10,14 +10,14 @@ services:
       replicas: 3
       labels:
         - "cblt.hosts=*.domain.com, domain.org"
-        - "cblt.policy=round_robin"
-        - "cblt.health_interval=2s"
-        - "cblt.health_timeout=1s"
-        - "cblt.health_uri =/helth"
-        - "cblt.strategy=round_robin"
         - "cblt.path=/api/*"
         - "cblt.port=9000"
         - "cblt.secrets=*.domain.com secret_key_2024 secret_cert_2024, domain.org secret_key_org_2024 secret_cert_org_2024"
+        - "cblt.lb_policy=round_robin"
+        - "cblt.lb_interval=2s"
+        - "cblt.lb_timeout=1s"
+        - "cblt.lb_retries=2"
+        - "cblt.lb_alive =/health"
       restart_policy:
         condition: on-failure
     ports:

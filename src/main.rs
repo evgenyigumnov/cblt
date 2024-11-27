@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
+use bollard::service::ListServicesOptions;
 use tokio::fs;
 use tokio::runtime::Builder;
 #[cfg(feature = "trace")]
@@ -156,7 +157,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
                     }
                 }
             }
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     });
 
@@ -178,6 +179,31 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn load_reverse_proxy_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
+    use bollard::Docker;
+    #[cfg(unix)]
+    let docker =  Docker::connect_with_local_defaults()?;
+    use std::default::Default;
+
+    let filters:HashMap<String, Vec<String>> = HashMap::new();
+    let options = Some(ListServicesOptions{
+        filters,
+        ..Default::default()
+    });
+
+    let services = docker.list_services(options).await?;
+    // print containers
+    for service in &services {
+        if let Some(spec) = &service.spec {
+            if let Some(labels) = &spec.labels {
+                for (label_k, label_v) in labels {
+                    if label_k.starts_with("cblt.") {
+                        println!("{:?} {}: {}",spec.name, label_k, label_v);
+                    }
+                }
+            }
+        }
+    }
+
     Ok(HashMap::new())
 }
 
@@ -279,8 +305,10 @@ fn build_servers(
 
 #[allow(dead_code)]
 pub fn only_in_debug() {
-    let _ =
-        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::new().default_filter_or("debug")
+    ).filter_module("bollard::docker", log::LevelFilter::Info)
+     .try_init();
 }
 
 #[allow(dead_code)]
