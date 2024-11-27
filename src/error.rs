@@ -22,12 +22,6 @@ pub enum CbltError {
         #[from]
         source: std::io::Error,
     },
-    // from reqwest::Error
-    #[error("ReqwestError: {source:?}")]
-    ReqwestError {
-        #[from]
-        source: reqwest::Error,
-    },
     // from AcquireError
     #[error("AcquireError: {source:?}")]
     AcquireError {

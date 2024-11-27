@@ -181,7 +181,6 @@ async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 async fn load_reverse_proxy_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
     use bollard::Docker;
-    #[cfg(unix)]
     let docker =  Docker::connect_with_local_defaults()?;
     use std::default::Default;
 
@@ -196,7 +195,7 @@ async fn load_reverse_proxy_from_docker(_args: Arc<Args>) -> Result<HashMap<u16,
         let mut service_name = None;
         if let Some(spec) = &service.spec {
             if let Some(labels) = &spec.labels {
-                for (label_k, label_v) in labels {
+                for (label_k, _label_v) in labels {
                     if label_k.starts_with("cblt.") {
                         if service_name.is_none() {
                             service_name = Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);

@@ -4,7 +4,6 @@ use crate::error::CbltError;
 use std::collections::HashMap;
 
 use crate::reverse_proxy::ReverseProxyState;
-use humantime::Duration;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -164,7 +163,6 @@ async fn init_proxy_states(
     directives: &Vec<Directive>,
 ) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
     let mut reverse_proxy_states: HashMap<String, ReverseProxyState> = HashMap::new(); // (pattern -> ReverseProxyState)
-    let client_reqwest = reqwest::Client::new();
     for directive in directives {
         match directive {
             Directive::ReverseProxy {
@@ -178,7 +176,6 @@ async fn init_proxy_states(
                         .lb_policy
                         .clone()
                         .unwrap_or(LoadBalancePolicy::RoundRobin),
-                    client_reqwest.clone(),
                 )?;
 
                 // if let Some(health_uri) = &options.lb_retries {
