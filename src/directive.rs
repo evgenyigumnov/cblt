@@ -127,6 +127,7 @@ where
                             socket,
                             &host_config.reverse_proxy_states,
                             addr,
+                            directive,
                         )
                         .await
                         {

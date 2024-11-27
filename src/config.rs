@@ -34,9 +34,9 @@ pub enum LoadBalancePolicy {
 
 #[derive(Debug, Clone, Default)]
 pub struct ReverseProxyOptions {
-    pub health_uri: Option<String>,
-    pub health_interval: Option<String>,
-    pub health_timeout: Option<String>,
+    pub lb_retries: u64,
+    pub lb_interval: u64,
+    pub lb_timeout: u64,
     pub lb_policy: Option<LoadBalancePolicy>,
 }
 
@@ -160,22 +160,32 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
         for child in children.nodes() {
             let name = child.name().value();
             match name {
-                "health_uri" => {
+                "lb_retries" => {
                     let args = get_string_args(child);
-                    if let Some(uri) = args.first() {
-                        options.health_uri = Some((*uri).to_string());
+                    if let Some(retries) = args.first() {
+                        options.lb_retries = retries.parse()?;
+                    } else {
+                        options.lb_retries = 2;
                     }
                 }
-                "health_interval" => {
+                "lb_interval" => {
                     let args = get_string_args(child);
                     if let Some(interval) = args.first() {
-                        options.health_interval = Some((*interval).to_string());
+                        options.lb_interval = interval
+                            .parse::<humantime::Duration>()?
+                            .as_secs();
+                    } else {
+                        options.lb_interval = 10;
                     }
                 }
-                "health_timeout" => {
+                "lb_timeout" => {
                     let args = get_string_args(child);
                     if let Some(timeout) = args.first() {
-                        options.health_timeout = Some((*timeout).to_string());
+                        options.lb_timeout = timeout
+                            .parse::<humantime::Duration>()?
+                            .as_secs();
+                    } else {
+                        options.lb_timeout = 1;
                     }
                 }
                 "lb_policy" => {

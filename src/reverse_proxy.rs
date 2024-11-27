@@ -14,13 +14,14 @@ pub async fn proxy_directive<S>(
     socket: &mut S,
     states: &HashMap<String, ReverseProxyState>,
     addr: SocketAddr,
+    directive: &Directive,
 ) -> Result<StatusCode, CbltError>
 where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     for (pattern, reverse_proxy_stat) in states {
         if matches_pattern(pattern, request.uri().path()) {
-            if let Ok(destination) = reverse_proxy_stat.get_next_backend(addr).await {
+            if let Ok(destination) = reverse_proxy_stat.get_next_backend(addr, directive).await {
                 debug!("Selected backend: {:?}", destination);
                 let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> =
                     heapless::String::new();
@@ -219,7 +220,7 @@ where
     })
 }
 
-use crate::config::LoadBalancePolicy;
+use crate::config::{Directive, LoadBalancePolicy};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
@@ -228,10 +229,17 @@ use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
+
+#[derive(Debug, Clone)]
+pub enum AliveState {
+    Alive(u64),
+    Dead(u64),
+}
+
 #[derive(Debug, Clone)]
 pub struct Backend {
     pub url: String,
-    pub is_healthy: Arc<RwLock<bool>>,
+    pub alive_state: Arc<RwLock<AliveState>>,
 }
 
 pub struct ReverseProxyState {
@@ -239,32 +247,46 @@ pub struct ReverseProxyState {
     pub lb_policy: LoadBalancePolicy,
     pub current_backend: Arc<RwLock<usize>>, // For Round Robin
     pub client: Client,
-    pub is_running_check: Arc<AtomicBool>,
+}
+pub struct AliveBackend {
+    address: heapless::String<HEAPLESS_STRING_SIZE>,
+    index: usize,
 }
 
 impl ReverseProxyState {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, client: Client) -> Self {
-        Self {
+    pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, client: Client) -> Result<Self, CbltError> {
+        let now_timestamp_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+        Ok(Self {
             backends: backends
                 .into_iter()
                 .map(|url| Backend {
                     url,
-                    is_healthy: Arc::new(RwLock::new(true)),
+                    alive_state: Arc::new(RwLock::new(AliveState::Alive(now_timestamp_seconds))),
                 })
                 .collect(),
             lb_policy,
             current_backend: Arc::new(RwLock::new(0)),
             client,
-            is_running_check: Arc::new(AtomicBool::new(true)),
-        }
+        })
     }
+
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn get_next_backend(
         &self,
         addr: SocketAddr,
+        directive: &Directive,
     ) -> Result<heapless::String<HEAPLESS_STRING_SIZE>, CbltError> {
+        let options = match directive {
+            Directive::ReverseProxy { pattern, destinations, options } => {
+                options
+            }
+            _ => {
+                return Err(CbltError::DirectiveNotMatched);
+            }
+        };
         // Implement load balancing logic here
         match &self.lb_policy {
             LoadBalancePolicy::RoundRobin => {
@@ -272,12 +294,46 @@ impl ReverseProxyState {
                 let total_backends = self.backends.len();
                 for _ in 0..total_backends {
                     let backend = &self.backends[*idx];
-                    if *backend.is_healthy.read().await {
-                        *idx = (*idx + 1) % total_backends;
-                        return heapless::String::from_str(backend.url.as_str())
-                            .map_err(|_| CbltError::HeaplessError {});
+                    let mut need_write = false;
+                    match *backend.alive_state.read().await {
+                        AliveState::Alive(timestamp) => {
+                            *idx = (*idx + 1) % total_backends;
+                            return heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {});
+                        }
+                        AliveState::Dead(timestamp) => {
+                            let now_timestamp_seconds = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+
+                            if now_timestamp_seconds > (timestamp + options.lb_interval) {
+                                need_write = true;
+                            } else {
+                                *idx = (*idx + 1) % total_backends;
+                            }
+                        }
                     }
-                    *idx = (*idx + 1) % total_backends;
+                    if need_write {
+                        let mut lock = backend.alive_state.write().await;
+                        match *lock {
+                            AliveState::Alive(timestamp) => {
+                                *idx = (*idx + 1) % total_backends;
+                                return heapless::String::from_str(backend.url.as_str())
+                                    .map_err(|_| CbltError::HeaplessError {});
+                            }
+                            AliveState::Dead(timestamp) => {
+                                let now_timestamp_seconds = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                                if now_timestamp_seconds > (timestamp + options.lb_interval) {
+                                    *lock = AliveState::Alive(now_timestamp_seconds);
+                                    *idx = (*idx + 1) % total_backends;
+                                    return heapless::String::from_str(backend.url.as_str())
+                                        .map_err(|_| CbltError::HeaplessError {});
+                                } else {
+                                    *idx = (*idx + 1) % total_backends;
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(CbltError::ResponseError {
                     details: "No healthy backends".to_string(),
@@ -294,81 +350,75 @@ impl ReverseProxyState {
                         });
                     }
                 };
-                let backend_idx =
-                    generate_number_from_octet(addr_octets, self.backends.len() as u32);
+                let backend_idx = generate_number_from_octet(addr_octets, self.backends.len() as u32);
                 let backend = &self.backends[backend_idx as usize];
-                if *backend.is_healthy.read().await {
-                    return heapless::String::from_str(backend.url.as_str())
-                        .map_err(|_| CbltError::HeaplessError {});
-                } else if backend_idx == self.backends.len() as u32 - 1 {
-                    let backend = &self.backends[0_usize];
-                    if *backend.is_healthy.read().await {
+
+                match *backend.alive_state.read().await {
+                    AliveState::Alive(timestamp) => {
                         return heapless::String::from_str(backend.url.as_str())
                             .map_err(|_| CbltError::HeaplessError {});
-                    } else {
-                        Err(CbltError::ResponseError {
-                            details: "No healthy backends".to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        })
                     }
-                } else {
-                    let backend = &self.backends[(backend_idx + 1) as usize];
-                    if *backend.is_healthy.read().await {
-                        return heapless::String::from_str(backend.url.as_str())
-                            .map_err(|_| CbltError::HeaplessError {});
-                    } else {
-                        Err(CbltError::ResponseError {
-                            details: "No healthy backends".to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        })
+                    AliveState::Dead(timestamp) => {
+                        let now_timestamp_seconds = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                        if now_timestamp_seconds > (timestamp + options.lb_interval) {
+                            // change backend
+                        } else {
+                            return heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {});
+                        }
                     }
                 }
+                {
+
+                    let mut lock = backend.alive_state.write().await;
+                    match *lock {
+                        AliveState::Alive(timestamp) => {
+                            return heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {});
+                        }
+                        AliveState::Dead(timestamp) => {
+                            let now_timestamp_seconds = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                            if now_timestamp_seconds > (timestamp + options.lb_interval) {
+                                *lock = AliveState::Alive(now_timestamp_seconds);
+                                return heapless::String::from_str(backend.url.as_str())
+                                    .map_err(|_| CbltError::HeaplessError {});
+                            } else {
+                                // take next
+                            }
+                        }
+                    }
+                }
+
+                let backend_idx = if backend_idx == self.backends.len() as u32 - 1 {
+                    0
+                } else {
+                    backend_idx + 1
+                };
+                let backend = &self.backends[backend_idx as usize];
+                match *backend.alive_state.read().await {
+                    AliveState::Alive(timestamp) => {
+                        return heapless::String::from_str(backend.url.as_str())
+                            .map_err(|_| CbltError::HeaplessError {});
+                    }
+                    AliveState::Dead(timestamp) => {
+                        let now_timestamp_seconds = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                        if now_timestamp_seconds > (timestamp + options.lb_interval) {
+                            return Err(CbltError::ResponseError {
+                                details: "No healthy backends".to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            });
+                        } else {
+                            return heapless::String::from_str(backend.url.as_str())
+                                .map_err(|_| CbltError::HeaplessError {});
+                        }
+                    }
+                }
+
             }
         }
-    }
-
-    #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub async fn start_health_checks(&self, health_uri: String, interval: u64, timeout: u64) {
-        let client = self.client.clone();
-        let backends = self.backends.clone();
-        let is_running_clone = self.is_running_check.clone();
-
-        tokio::spawn(async move {
-            let interval = tokio::time::Duration::from_secs(interval);
-            let timeout = tokio::time::Duration::from_secs(timeout);
-            while is_running_clone.load(Ordering::SeqCst) {
-                for backend in &backends {
-                    let mut url: heapless::String<{ HEAPLESS_STRING_SIZE * 2 }> =
-                        heapless::String::new();
-                    if let Err(err) = url.push_str(backend.url.as_str()) {
-                        log::error!("Error: {:?}", err);
-                        break;
-                    }
-                    if let Err(err) = url.push_str(health_uri.as_str()) {
-                        log::error!("Error: {:?}", err);
-                        break;
-                    }
-                    let is_healthy = backend.is_healthy.clone();
-                    let client = client.clone();
-                    tokio::spawn(async move {
-                        let resp = client.get(&*url).timeout(timeout).send().await;
-                        let mut health = is_healthy.write().await;
-                        *health = resp.is_ok()
-                            && match resp {
-                                Ok(rest) => rest.status().is_success(),
-                                Err(err) => {
-                                    #[cfg(debug_assertions)]
-                                    debug!("Error: {:?}", err);
-                                    false
-                                }
-                            };
-                        #[cfg(debug_assertions)]
-                        debug!("Health check for {}: {}", url, *health);
-                    });
-                }
-                tokio::time::sleep(interval).await;
-            }
-        });
     }
 }
 
