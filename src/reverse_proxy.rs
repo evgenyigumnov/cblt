@@ -153,6 +153,10 @@ where
                     }
                     Err(err) => {
                         reverse_proxy_state.set_dead_backend(&backend);
+                        return Err(CbltError::ResponseError {
+                            details: "No healthy backends".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        });
                     }
                 }
             } else {
