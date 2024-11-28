@@ -176,6 +176,7 @@ async fn init_proxy_states(
                         .lb_policy
                         .clone()
                         .unwrap_or(LoadBalancePolicy::RoundRobin),
+                    options.clone()
                 )?;
 
                 // if let Some(health_uri) = &options.lb_retries {
