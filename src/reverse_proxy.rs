@@ -159,8 +159,8 @@ where
                             }
                         }
                     }
-                    Err(err) => {
-                        reverse_proxy_state.set_dead_backend(&backend);
+                    Err(_) => {
+                        reverse_proxy_state.set_dead_backend(&backend).await?;
                         return Err(CbltError::ResponseError {
                             details: "No healthy backends".to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
@@ -463,19 +463,15 @@ impl ReverseProxyState {
                 };
                 let backend = &self.backends[backend_idx as usize];
                 match *backend.alive_state.read().await {
-                    AliveState::Alive(_timestamp) => {
-                        Ok(LiveBackend {
-                            address: heapless::String::from_str(backend.url.as_str())
-                                .map_err(|_| CbltError::HeaplessError {})?,
-                            backend_index: backend_idx as usize,
-                        })
-                    }
-                    AliveState::Dead(_timestamp) => {
-                        Err(CbltError::ResponseError {
-                            details: "No healthy backends".to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        })
-                    }
+                    AliveState::Alive(_timestamp) => Ok(LiveBackend {
+                        address: heapless::String::from_str(backend.url.as_str())
+                            .map_err(|_| CbltError::HeaplessError {})?,
+                        backend_index: backend_idx as usize,
+                    }),
+                    AliveState::Dead(_timestamp) => Err(CbltError::ResponseError {
+                        details: "No healthy backends".to_string(),
+                        status_code: StatusCode::BAD_GATEWAY,
+                    }),
                 }
             }
         }

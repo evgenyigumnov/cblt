@@ -1,6 +1,4 @@
-use crate::config::{
-    load_reverse_proxy_from_docker, load_servers_from_config, Directive,
-};
+use crate::config::{load_reverse_proxy_from_docker, load_servers_from_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
 use clap::{Parser, ValueEnum};
