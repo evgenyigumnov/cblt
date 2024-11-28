@@ -1,19 +1,15 @@
 use crate::config::{
-    build_config, load_reverse_proxy_from_docker, load_servers_from_config, Directive,
+    load_reverse_proxy_from_docker, load_servers_from_config, Directive,
 };
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
-use bollard::container::ListContainersOptions;
-use bollard::service::ListServicesOptions;
 use clap::{Parser, ValueEnum};
-use kdl::KdlDocument;
 use log::{debug, error, info};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
-use tokio::fs;
 use tokio::runtime::Builder;
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -143,20 +139,18 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
                         error!("Error: {}", err);
                     }
                 }
-            } else {
-                if reload_file_path.exists() {
-                    match load_servers_from_config(args.clone()).await {
-                        Ok(servers) => {
-                            if let Err(err) = tx.send(servers) {
-                                error!("Error: {}", err);
-                            }
-                            if let Err(err) = std::fs::remove_file(reload_file_path) {
-                                error!("Error: {}", err);
-                            }
-                        }
-                        Err(err) => {
+            } else if reload_file_path.exists() {
+                match load_servers_from_config(args.clone()).await {
+                    Ok(servers) => {
+                        if let Err(err) = tx.send(servers) {
                             error!("Error: {}", err);
                         }
+                        if let Err(err) = std::fs::remove_file(reload_file_path) {
+                            error!("Error: {}", err);
+                        }
+                    }
+                    Err(err) => {
+                        error!("Error: {}", err);
                     }
                 }
             }

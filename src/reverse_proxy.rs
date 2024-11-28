@@ -464,14 +464,14 @@ impl ReverseProxyState {
                 let backend = &self.backends[backend_idx as usize];
                 match *backend.alive_state.read().await {
                     AliveState::Alive(_timestamp) => {
-                        return Ok(LiveBackend {
+                        Ok(LiveBackend {
                             address: heapless::String::from_str(backend.url.as_str())
                                 .map_err(|_| CbltError::HeaplessError {})?,
                             backend_index: backend_idx as usize,
-                        });
+                        })
                     }
                     AliveState::Dead(_timestamp) => {
-                        return Err(CbltError::ResponseError {
+                        Err(CbltError::ResponseError {
                             details: "No healthy backends".to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
                         })

@@ -248,32 +248,30 @@ pub async fn load_reverse_proxy_from_docker(
         let mut service_name = None;
         if let Some(spec) = &service.spec {
             if let Some(labels) = &spec.labels {
-                for (label_k, _label_v) in labels {
-                    if label_k.starts_with("cblt.") {
-                        if service_name.is_none() {
-                            service_name =
-                                Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
-                            let containers = docker
-                                .list_containers(Some(ListContainersOptions::<String> {
-                                    all: false,
-                                    filters: HashMap::new(),
-                                    ..Default::default()
-                                }))
-                                .await?;
-                            for container in &containers {
-                                if let Some(names) = &container.names {
-                                    match names.iter().find(|name| {
-                                        name.starts_with(&format!("/{}.", service_name.unwrap()))
-                                    }) {
-                                        None => {}
-                                        Some(name_all) => {
-                                            let container_name = name_all.replace("/", "");
-                                            println!("{container_name}");
-                                        }
+                for label_k in labels.keys() {
+                    if label_k.starts_with("cblt.") && service_name.is_none() {
+                        service_name =
+                            Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
+                        let containers = docker
+                            .list_containers(Some(ListContainersOptions::<String> {
+                                all: false,
+                                filters: HashMap::new(),
+                                ..Default::default()
+                            }))
+                            .await?;
+                        for container in &containers {
+                            if let Some(names) = &container.names {
+                                match names.iter().find(|name| {
+                                    name.starts_with(&format!("/{}.", service_name.unwrap()))
+                                }) {
+                                    None => {}
+                                    Some(name_all) => {
+                                        let container_name = name_all.replace("/", "");
+                                        println!("{container_name}");
                                     }
-                                } else {
-                                    return Err(CbltError::ContainerNameNotFound);
                                 }
+                            } else {
+                                return Err(CbltError::ContainerNameNotFound);
                             }
                         }
                     }
