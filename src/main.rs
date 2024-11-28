@@ -1,4 +1,4 @@
-use crate::config::{load_reverse_proxy_from_docker, load_servers_from_config, Directive};
+use crate::config::{load_servers_from_docker, load_servers_from_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
 use clap::{Parser, ValueEnum};
@@ -85,7 +85,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     info!("Max connections: {}", max_connections);
 
     let servers: HashMap<u16, Server> = if args.mode == Mode::Docker {
-        load_reverse_proxy_from_docker(args.clone()).await?
+        load_servers_from_docker(args.clone()).await?
     } else {
         load_servers_from_config(args.clone()).await?
     };
@@ -127,7 +127,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
 
         loop {
             if args.mode == Mode::Docker {
-                match load_reverse_proxy_from_docker(args.clone()).await {
+                match load_servers_from_docker(args.clone()).await {
                     Ok(servers) => {
                         if let Err(err) = tx.send(servers) {
                             error!("Error: {}", err);

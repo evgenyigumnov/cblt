@@ -230,7 +230,7 @@ pub async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Se
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-pub async fn load_reverse_proxy_from_docker(
+pub async fn load_servers_from_docker(
     _args: Arc<Args>,
 ) -> Result<HashMap<u16, Server>, CbltError> {
     use bollard::Docker;
