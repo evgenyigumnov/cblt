@@ -92,4 +92,19 @@ pub enum CbltError {
     ServiceNameNotFound,
     #[error("ContainerNameNotFound")]
     ContainerNameNotFound,
+    #[error("InvalidLabelFormat:  {details:?}")]
+    InvalidLabelFormat{
+        details: String
+    },
+    #[error("LabelNotFound:  {details:?}")]
+    LabelNotFound {
+        details: String
+    },
+    #[error("SecretSpecNotFound")]
+    SecretSpecNotFound,
+    #[error("SecretNameNotFound")]
+    SecretNameNotFound,
+    #[error("SecretDataNotFound")]
+    SecretDataNotFound,
 }
+
