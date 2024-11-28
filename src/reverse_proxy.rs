@@ -9,7 +9,6 @@ use tracing::instrument;
 pub const HEAPLESS_STRING_SIZE: usize = 100;
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn proxy_directive<S>(
     request: &Request<BytesMut>,
     socket: &mut S,
@@ -32,184 +31,191 @@ pub async fn proxy_directive<S>(
     };
     for (pattern, reverse_proxy_state) in states {
         if matches_pattern(pattern, request.uri().path()) {
-            if let Ok(backend) = reverse_proxy_state.get_next_backend(addr).await {
-                #[cfg(debug_assertions)]
-                debug!("Selected backend: {:?}", backend);
-                let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> =
-                    heapless::String::new();
-                dest_uri
-                    .push_str(backend.address.as_str())
-                    .map_err(|_| CbltError::HeaplessError {})?;
-                dest_uri
-                    .push_str(request.uri().path())
-                    .map_err(|_| CbltError::HeaplessError {})?;
+            loop {
+                match reverse_proxy_state.get_next_backend(addr).await {
+                    Ok(backend) => {
+                        #[cfg(debug_assertions)]
+                        debug!("Selected backend: {:?}", backend);
+                        let mut dest_uri: heapless::String<{ 2 * HEAPLESS_STRING_SIZE }> =
+                            heapless::String::new();
+                        dest_uri
+                            .push_str(backend.address.as_str())
+                            .map_err(|_| CbltError::HeaplessError {})?;
+                        dest_uri
+                            .push_str(request.uri().path())
+                            .map_err(|_| CbltError::HeaplessError {})?;
 
-                #[cfg(debug_assertions)]
-                debug!("Destination URI: {}", dest_uri);
+                        #[cfg(debug_assertions)]
+                        debug!("Destination URI: {}", dest_uri);
 
-                // Parse the destination URI
-                let dest_uri_parsed =
-                    dest_uri
-                        .parse::<http::Uri>()
-                        .map_err(|e| CbltError::ResponseError {
-                            details: e.to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        })?;
-                let host = dest_uri_parsed.host().ok_or(CbltError::ResponseError {
-                    details: "Invalid destination URI".to_string(),
-                    status_code: StatusCode::BAD_GATEWAY,
-                })?;
-                let port = dest_uri_parsed.port_u16().unwrap_or_else(|| {
-                    if dest_uri_parsed.scheme_str() == Some("https") {
-                        443
-                    } else {
-                        80
-                    }
-                });
-                let mut backend_addr: heapless::String<{ HEAPLESS_STRING_SIZE * 2 }> =
-                    heapless::String::new();
-                backend_addr
-                    .push_str(host)
-                    .map_err(|_| CbltError::HeaplessError {})?;
-                backend_addr
-                    .push_str(":")
-                    .map_err(|_| CbltError::HeaplessError {})?;
-                backend_addr
-                    .push_str(port.to_string().as_str())
-                    .map_err(|_| CbltError::HeaplessError {})?;
-                #[cfg(debug_assertions)]
-                debug!("Connecting to backend at {}", backend_addr);
-
-                // Establish a TCP connection to the backend with retries
-                let timeout_duration = Duration::from_secs(options.lb_timeout);
-                let mut retries = options.lb_retries;
-                let mut backend_stream_result = Err(CbltError::ResponseError {
-                    details: "Failed to connect to backend".to_string(),
-                    status_code: StatusCode::BAD_GATEWAY,
-                });
-
-                while retries > 0 {
-                    match timeout(
-                        timeout_duration,
-                        TcpStream::connect(backend_addr.as_str()),
-                    )
-                        .await
-                    {
-                        Ok(connect_result) => match connect_result {
-                            Ok(stream) => {
-                                backend_stream_result = Ok(stream);
-                                break;
-                            }
-                            Err(e) => {
-                                #[cfg(debug_assertions)]
-                                error!("Failed to connect to backend: {}", e);
-                                retries -= 1;
-                            }
-                        },
-                        Err(e) => {
-                            #[cfg(debug_assertions)]
-                            error!("Connection to backend timed out: {}", e);
-                            retries -= 1;
-                        }
-                    }
-                }
-
-                match backend_stream_result {
-                    Ok(mut backend_stream) => {
-                        // Backend is alive, update its state
-                        reverse_proxy_state.set_alive_backend(&backend).await?;
-
-                        // Send the initial request to the backend
-                        let request_bytes = request_to_bytes(request)?;
-                        backend_stream
-                            .write_all(&request_bytes)
-                            .await
-                            .map_err(|e| CbltError::ResponseError {
-                                details: e.to_string(),
-                                status_code: StatusCode::BAD_GATEWAY,
-                            })?;
-
-                        // Read the response from the backend
-                        let mut backend_buf = BytesMut::with_capacity(8192);
-                        let header_len =
-                            get_header_len(&mut backend_stream, &mut backend_buf).await?;
-
-                        // Send the response headers back to the client
-                        socket
-                            .write_all(&backend_buf[..header_len])
-                            .await
-                            .map_err(|e| CbltError::ResponseError {
-                                details: e.to_string(),
-                                status_code: StatusCode::BAD_GATEWAY,
-                            })?;
-
-                        // If there's any body data already read, send it
-                        if backend_buf.len() > header_len {
-                            socket
-                                .write_all(&backend_buf[header_len..])
-                                .await
+                        // Parse the destination URI
+                        let dest_uri_parsed =
+                            dest_uri
+                                .parse::<http::Uri>()
                                 .map_err(|e| CbltError::ResponseError {
                                     details: e.to_string(),
                                     status_code: StatusCode::BAD_GATEWAY,
                                 })?;
+                        let host = dest_uri_parsed.host().ok_or(CbltError::ResponseError {
+                            details: "Invalid destination URI".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        })?;
+                        let port = dest_uri_parsed.port_u16().unwrap_or_else(|| {
+                            if dest_uri_parsed.scheme_str() == Some("https") {
+                                443
+                            } else {
+                                80
+                            }
+                        });
+                        let mut backend_addr: heapless::String<{ HEAPLESS_STRING_SIZE * 2 }> =
+                            heapless::String::new();
+                        backend_addr
+                            .push_str(host)
+                            .map_err(|_| CbltError::HeaplessError {})?;
+                        backend_addr
+                            .push_str(":")
+                            .map_err(|_| CbltError::HeaplessError {})?;
+                        backend_addr
+                            .push_str(port.to_string().as_str())
+                            .map_err(|_| CbltError::HeaplessError {})?;
+                        #[cfg(debug_assertions)]
+                        debug!("Connecting to backend at {}", backend_addr);
+
+                        // Establish a TCP connection to the backend with retries
+                        let timeout_duration = Duration::from_secs(options.lb_timeout);
+                        let mut retries = options.lb_retries;
+                        let mut backend_stream_result = Err(CbltError::ResponseError {
+                            details: "Failed to connect to backend".to_string(),
+                            status_code: StatusCode::BAD_GATEWAY,
+                        });
+
+                        while retries > 0 {
+                            match timeout(
+                                timeout_duration,
+                                TcpStream::connect(backend_addr.as_str()),
+                            )
+                                .await
+                            {
+                                Ok(connect_result) => match connect_result {
+                                    Ok(stream) => {
+                                        backend_stream_result = Ok(stream);
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        #[cfg(debug_assertions)]
+                                        error!("Failed to connect to backend: {}", e);
+                                        retries -= 1;
+                                    }
+                                },
+                                Err(e) => {
+                                    #[cfg(debug_assertions)]
+                                    error!("Connection to backend timed out: {}", e);
+                                    retries -= 1;
+                                }
+                            }
                         }
 
-                        let (mut backend_read_half, mut backend_write_half) =
-                            backend_stream.split();
-                        let (mut client_read_half, mut client_write_half) =
-                            tokio::io::split(socket);
+                        match backend_stream_result {
+                            Ok(mut backend_stream) => {
+                                // Backend is alive, update its state
+                                reverse_proxy_state.set_alive_backend(&backend).await?;
 
-                        let client_to_backend = async {
-                            let result =
-                                tokio::io::copy(&mut client_read_half, &mut backend_write_half)
-                                    .await;
-                            backend_write_half.shutdown().await.ok();
-                            result
-                        };
+                                // Send the initial request to the backend
+                                let request_bytes = request_to_bytes(request)?;
+                                backend_stream
+                                    .write_all(&request_bytes)
+                                    .await
+                                    .map_err(|e| CbltError::ResponseError {
+                                        details: e.to_string(),
+                                        status_code: StatusCode::BAD_GATEWAY,
+                                    })?;
 
-                        let backend_to_client = async {
-                            let result =
-                                tokio::io::copy(&mut backend_read_half, &mut client_write_half)
-                                    .await;
-                            client_write_half.shutdown().await.ok();
-                            result
-                        };
+                                // Read the response from the backend
+                                let mut backend_buf = BytesMut::with_capacity(8192);
+                                let header_len =
+                                    get_header_len(&mut backend_stream, &mut backend_buf).await?;
 
-                        let (client_to_backend_res, backend_to_client_res) =
-                            tokio::join!(client_to_backend, backend_to_client);
-                        match (client_to_backend_res, backend_to_client_res) {
-                            (Ok(_), Ok(_)) => {
-                                return Ok(StatusCode::OK);
+                                // Send the response headers back to the client
+                                socket
+                                    .write_all(&backend_buf[..header_len])
+                                    .await
+                                    .map_err(|e| CbltError::ResponseError {
+                                        details: e.to_string(),
+                                        status_code: StatusCode::BAD_GATEWAY,
+                                    })?;
+
+                                // If there's any body data already read, send it
+                                if backend_buf.len() > header_len {
+                                    socket
+                                        .write_all(&backend_buf[header_len..])
+                                        .await
+                                        .map_err(|e| CbltError::ResponseError {
+                                            details: e.to_string(),
+                                            status_code: StatusCode::BAD_GATEWAY,
+                                        })?;
+                                }
+
+                                let (mut backend_read_half, mut backend_write_half) =
+                                    backend_stream.split();
+                                let (mut client_read_half, mut client_write_half) =
+                                    tokio::io::split(socket);
+
+                                let client_to_backend = async {
+                                    let result = tokio::io::copy(
+                                        &mut client_read_half,
+                                        &mut backend_write_half,
+                                    )
+                                        .await;
+                                    backend_write_half.shutdown().await.ok();
+                                    result
+                                };
+
+                                let backend_to_client = async {
+                                    let result = tokio::io::copy(
+                                        &mut backend_read_half,
+                                        &mut client_write_half,
+                                    )
+                                        .await;
+                                    client_write_half.shutdown().await.ok();
+                                    result
+                                };
+
+                                let (client_to_backend_res, backend_to_client_res) =
+                                    tokio::join!(client_to_backend, backend_to_client);
+                                match (client_to_backend_res, backend_to_client_res) {
+                                    (Ok(_), Ok(_)) => {
+                                        return Ok(StatusCode::OK);
+                                    }
+                                    _ => {
+                                        return Err(CbltError::ResponseError {
+                                            details:
+                                            "Failed to copy data between client and backend"
+                                                .to_string(),
+                                            status_code: StatusCode::BAD_GATEWAY,
+                                        });
+                                    }
+                                }
                             }
-                            _ => {
-                                return Err(CbltError::ResponseError {
-                                    details:
-                                    "Failed to copy data between client and backend".to_string(),
-                                    status_code: StatusCode::BAD_GATEWAY,
-                                });
+                            Err(_) => {
+                                // Mark the backend as dead and continue to the next backend
+                                reverse_proxy_state.set_dead_backend(&backend).await?;
+                                continue; // Try the next backend
                             }
                         }
                     }
                     Err(_) => {
-                        reverse_proxy_state.set_dead_backend(&backend).await?;
                         return Err(CbltError::ResponseError {
                             details: "No healthy backends".to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
                         });
                     }
                 }
-            } else {
-                return Err(CbltError::ResponseError {
-                    details: "No healthy backends".to_string(),
-                    status_code: StatusCode::BAD_GATEWAY,
-                });
             }
         }
     }
 
     Err(CbltError::DirectiveNotMatched)
 }
-
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn request_to_bytes(request: &Request<BytesMut>) -> Result<Vec<u8>, CbltError> {
     let mut buf = Vec::new();
