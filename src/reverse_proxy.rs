@@ -19,9 +19,11 @@ where
     S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let options = match directive {
-        Directive::ReverseProxy { pattern:_, destinations:_ , options } => {
-            options
-        }
+        Directive::ReverseProxy {
+            pattern: _,
+            destinations: _,
+            options,
+        } => options,
         _ => {
             return Err(CbltError::DirectiveNotMatched);
         }
@@ -80,10 +82,11 @@ where
                 let timeout_duration = Duration::from_secs(options.lb_timeout);
                 match timeout(timeout_duration, TcpStream::connect(backend_addr.as_str())).await {
                     Ok(backend_stream_result) => {
-                        let mut backend_stream = backend_stream_result.map_err(|e| CbltError::ResponseError {
-                            details: e.to_string(),
-                            status_code: StatusCode::BAD_GATEWAY,
-                        })?;
+                        let mut backend_stream =
+                            backend_stream_result.map_err(|e| CbltError::ResponseError {
+                                details: e.to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            })?;
 
                         // Send the initial request to the backend
                         let request_bytes = request_to_bytes(request)?;
@@ -97,7 +100,8 @@ where
 
                         // Read the response from the backend
                         let mut backend_buf = BytesMut::with_capacity(8192);
-                        let header_len = get_header_len(&mut backend_stream, &mut backend_buf).await?;
+                        let header_len =
+                            get_header_len(&mut backend_stream, &mut backend_buf).await?;
 
                         // Send the response headers back to the client
                         socket
@@ -119,19 +123,23 @@ where
                                 })?;
                         }
 
-                        let (mut backend_read_half, mut backend_write_half) = backend_stream.split();
-                        let (mut client_read_half, mut client_write_half) = tokio::io::split(socket);
+                        let (mut backend_read_half, mut backend_write_half) =
+                            backend_stream.split();
+                        let (mut client_read_half, mut client_write_half) =
+                            tokio::io::split(socket);
 
                         let client_to_backend = async {
                             let result =
-                                tokio::io::copy(&mut client_read_half, &mut backend_write_half).await;
+                                tokio::io::copy(&mut client_read_half, &mut backend_write_half)
+                                    .await;
                             backend_write_half.shutdown().await.ok();
                             result
                         };
 
                         let backend_to_client = async {
                             let result =
-                                tokio::io::copy(&mut backend_read_half, &mut client_write_half).await;
+                                tokio::io::copy(&mut backend_read_half, &mut client_write_half)
+                                    .await;
                             client_write_half.shutdown().await.ok();
                             result
                         };
@@ -144,12 +152,12 @@ where
                             }
                             _ => {
                                 return Err(CbltError::ResponseError {
-                                    details: "Failed to copy data between client and backend".to_string(),
+                                    details: "Failed to copy data between client and backend"
+                                        .to_string(),
                                     status_code: StatusCode::BAD_GATEWAY,
                                 });
                             }
                         }
-
                     }
                     Err(err) => {
                         reverse_proxy_state.set_dead_backend(&backend);
@@ -249,7 +257,6 @@ use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-
 #[derive(Debug, Clone)]
 pub enum AliveState {
     Alive(u64),
@@ -277,7 +284,8 @@ impl ReverseProxyState {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy) -> Result<Self, CbltError> {
         let now_timestamp_seconds = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
         Ok(Self {
             backends: backends
                 .into_iter()
@@ -293,12 +301,12 @@ impl ReverseProxyState {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn set_dead_backend(&self, live_backend: &LiveBackend) -> Result<(), CbltError> {
         let now_timestamp_seconds = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
         let backend = &self.backends[live_backend.backend_index];
         *backend.alive_state.write().await = AliveState::Dead(now_timestamp_seconds);
         Ok(())
     }
-
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     pub async fn get_next_backend(
@@ -307,9 +315,11 @@ impl ReverseProxyState {
         directive: &Directive,
     ) -> Result<LiveBackend, CbltError> {
         let options = match directive {
-            Directive::ReverseProxy { pattern:_, destinations:_ , options } => {
-                options
-            }
+            Directive::ReverseProxy {
+                pattern: _,
+                destinations: _,
+                options,
+            } => options,
             _ => {
                 return Err(CbltError::DirectiveNotMatched);
             }
@@ -334,7 +344,8 @@ impl ReverseProxyState {
                         }
                         AliveState::Dead(timestamp) => {
                             let now_timestamp_seconds = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                                .duration_since(std::time::UNIX_EPOCH)?
+                                .as_secs();
 
                             if now_timestamp_seconds > (timestamp + options.lb_interval) {
                                 need_write = true;
@@ -357,7 +368,8 @@ impl ReverseProxyState {
                             }
                             AliveState::Dead(timestamp) => {
                                 let now_timestamp_seconds = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                                    .duration_since(std::time::UNIX_EPOCH)?
+                                    .as_secs();
                                 if now_timestamp_seconds > (timestamp + options.lb_interval) {
                                     *lock = AliveState::Alive(now_timestamp_seconds);
                                     let live_backend = LiveBackend {
@@ -389,7 +401,8 @@ impl ReverseProxyState {
                         });
                     }
                 };
-                let backend_idx = generate_number_from_octet(addr_octets, self.backends.len() as u32);
+                let backend_idx =
+                    generate_number_from_octet(addr_octets, self.backends.len() as u32);
                 let backend = &self.backends[backend_idx as usize];
 
                 match *backend.alive_state.read().await {
@@ -397,12 +410,13 @@ impl ReverseProxyState {
                         return Ok(LiveBackend {
                             address: heapless::String::from_str(backend.url.as_str())
                                 .map_err(|_| CbltError::HeaplessError {})?,
-                            backend_index: backend_idx as usize
+                            backend_index: backend_idx as usize,
                         });
                     }
                     AliveState::Dead(timestamp) => {
                         let now_timestamp_seconds = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                            .duration_since(std::time::UNIX_EPOCH)?
+                            .as_secs();
                         if now_timestamp_seconds > (timestamp + options.lb_interval) {
                             // change backend
                         } else {
@@ -415,7 +429,6 @@ impl ReverseProxyState {
                     }
                 }
                 {
-
                     let mut lock = backend.alive_state.write().await;
                     match *lock {
                         AliveState::Alive(_timestamp) => {
@@ -427,7 +440,8 @@ impl ReverseProxyState {
                         }
                         AliveState::Dead(timestamp) => {
                             let now_timestamp_seconds = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)?.as_secs();
+                                .duration_since(std::time::UNIX_EPOCH)?
+                                .as_secs();
                             if now_timestamp_seconds > (timestamp + options.lb_interval) {
                                 *lock = AliveState::Alive(now_timestamp_seconds);
                                 return Ok(LiveBackend {
@@ -463,7 +477,6 @@ impl ReverseProxyState {
                         })
                     }
                 }
-
             }
         }
     }

@@ -1,7 +1,13 @@
 use crate::error::CbltError;
+use crate::server::Server;
+use crate::{build_servers, Args};
+use bollard::container::ListContainersOptions;
+use bollard::service::ListServicesOptions;
 use kdl::{KdlDocument, KdlNode};
 use log::debug;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::fs;
 #[cfg(feature = "trace")]
 use tracing::instrument;
 
@@ -171,9 +177,7 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
                 "lb_interval" => {
                     let args = get_string_args(child);
                     if let Some(interval) = args.first() {
-                        options.lb_interval = interval
-                            .parse::<humantime::Duration>()?
-                            .as_secs();
+                        options.lb_interval = interval.parse::<humantime::Duration>()?.as_secs();
                     } else {
                         options.lb_interval = 10;
                     }
@@ -181,9 +185,7 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
                 "lb_timeout" => {
                     let args = get_string_args(child);
                     if let Some(timeout) = args.first() {
-                        options.lb_timeout = timeout
-                            .parse::<humantime::Duration>()?
-                            .as_secs();
+                        options.lb_timeout = timeout.parse::<humantime::Duration>()?.as_secs();
                     } else {
                         options.lb_timeout = 1;
                     }
@@ -216,6 +218,71 @@ fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, Cb
     }
 
     Ok(options)
+}
+
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+pub async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
+    let cbltfile_content = fs::read_to_string(&args.cfg).await?;
+    let doc: KdlDocument = cbltfile_content.parse()?;
+    let config = build_config(&doc)?;
+
+    build_servers(config)
+}
+
+#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
+pub async fn load_reverse_proxy_from_docker(
+    _args: Arc<Args>,
+) -> Result<HashMap<u16, Server>, CbltError> {
+    use bollard::Docker;
+    let docker = Docker::connect_with_local_defaults()?;
+    use std::default::Default;
+
+    let filters: HashMap<String, Vec<String>> = HashMap::new();
+    let options = Some(ListServicesOptions {
+        filters,
+        ..Default::default()
+    });
+
+    let services = docker.list_services(options).await?;
+    for service in &services {
+        let mut service_name = None;
+        if let Some(spec) = &service.spec {
+            if let Some(labels) = &spec.labels {
+                for (label_k, _label_v) in labels {
+                    if label_k.starts_with("cblt.") {
+                        if service_name.is_none() {
+                            service_name =
+                                Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
+                            let containers = docker
+                                .list_containers(Some(ListContainersOptions::<String> {
+                                    all: false,
+                                    filters: HashMap::new(),
+                                    ..Default::default()
+                                }))
+                                .await?;
+                            for container in &containers {
+                                if let Some(names) = &container.names {
+                                    match names.iter().find(|name| {
+                                        name.starts_with(&format!("/{}.", service_name.unwrap()))
+                                    }) {
+                                        None => {}
+                                        Some(name_all) => {
+                                            let container_name = name_all.replace("/", "");
+                                            println!("{container_name}");
+                                        }
+                                    }
+                                } else {
+                                    return Err(CbltError::ContainerNameNotFound);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(HashMap::new())
 }
 
 #[cfg(test)]

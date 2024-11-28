@@ -1,6 +1,10 @@
-use crate::config::{build_config, Directive};
+use crate::config::{
+    build_config, load_reverse_proxy_from_docker, load_servers_from_config, Directive,
+};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
+use bollard::container::ListContainersOptions;
+use bollard::service::ListServicesOptions;
 use clap::{Parser, ValueEnum};
 use kdl::KdlDocument;
 use log::{debug, error, info};
@@ -9,8 +13,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
-use bollard::container::ListContainersOptions;
-use bollard::service::ListServicesOptions;
 use tokio::fs;
 use tokio::runtime::Builder;
 #[cfg(feature = "trace")]
@@ -45,7 +47,6 @@ struct Args {
     #[arg(long, default_value = "config", value_enum)]
     mode: Mode, // Add the mode field
 }
-
 
 #[derive(ValueEnum, Clone, Debug, Eq, PartialEq)]
 enum Mode {
@@ -170,68 +171,6 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
-    let cbltfile_content = fs::read_to_string(&args.cfg).await?;
-    let doc: KdlDocument = cbltfile_content.parse()?;
-    let config = build_config(&doc)?;
-
-    build_servers(config)
-}
-
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-async fn load_reverse_proxy_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
-    use bollard::Docker;
-    let docker =  Docker::connect_with_local_defaults()?;
-    use std::default::Default;
-
-    let filters:HashMap<String, Vec<String>> = HashMap::new();
-    let options = Some(ListServicesOptions{
-        filters,
-        ..Default::default()
-    });
-
-    let services = docker.list_services(options).await?;
-    for service in &services {
-        let mut service_name = None;
-        if let Some(spec) = &service.spec {
-            if let Some(labels) = &spec.labels {
-                for (label_k, _label_v) in labels {
-                    if label_k.starts_with("cblt.") {
-                        if service_name.is_none() {
-                            service_name = Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
-                            let containers = docker.list_containers(Some(ListContainersOptions::<String>{
-                                all: false,
-                                filters: HashMap::new(),
-                                ..Default::default()
-                            })).await?;
-                            for container in &containers {
-                                if let Some(names) = &container.names {
-                                    match names.iter().find(|name| name.starts_with(&format!("/{}.", service_name.unwrap()))) {
-                                        None => {}
-                                        Some(name_all) => {
-                                            let container_name = name_all.replace("/", "");
-                                            println!("{container_name}");
-                                        }
-                                    }
-                                } else {
-                                    return Err(CbltError::ContainerNameNotFound);
-                                }
-                            }
-                        }
-
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(HashMap::new())
-}
-
-
-
-
 pub struct ServerSupervisor {
     workers: HashMap<u16, ServerWorker>,
 }
@@ -328,10 +267,9 @@ fn build_servers(
 
 #[allow(dead_code)]
 pub fn only_in_debug() {
-    let _ = env_logger::Builder::from_env(
-        env_logger::Env::new().default_filter_or("debug")
-    ).filter_module("bollard::docker", log::LevelFilter::Info)
-     .try_init();
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug"))
+        .filter_module("bollard::docker", log::LevelFilter::Info)
+        .try_init();
 }
 
 #[allow(dead_code)]
