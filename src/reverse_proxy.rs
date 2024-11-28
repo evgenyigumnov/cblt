@@ -16,8 +16,8 @@ pub async fn proxy_directive<S>(
     addr: SocketAddr,
     directive: &Directive,
 ) -> Result<StatusCode, CbltError>
-    where
-        S: AsyncReadExt + AsyncWriteExt + Unpin,
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
 {
     let options = match directive {
         Directive::ReverseProxy {
@@ -49,13 +49,12 @@ pub async fn proxy_directive<S>(
                         debug!("Destination URI: {}", dest_uri);
 
                         // Parse the destination URI
-                        let dest_uri_parsed =
-                            dest_uri
-                                .parse::<http::Uri>()
-                                .map_err(|e| CbltError::ResponseError {
-                                    details: e.to_string(),
-                                    status_code: StatusCode::BAD_GATEWAY,
-                                })?;
+                        let dest_uri_parsed = dest_uri.parse::<http::Uri>().map_err(|e| {
+                            CbltError::ResponseError {
+                                details: e.to_string(),
+                                status_code: StatusCode::BAD_GATEWAY,
+                            }
+                        })?;
                         let host = dest_uri_parsed.host().ok_or(CbltError::ResponseError {
                             details: "Invalid destination URI".to_string(),
                             status_code: StatusCode::BAD_GATEWAY,
@@ -94,7 +93,7 @@ pub async fn proxy_directive<S>(
                                 timeout_duration,
                                 TcpStream::connect(backend_addr.as_str()),
                             )
-                                .await
+                            .await
                             {
                                 Ok(connect_result) => match connect_result {
                                     Ok(stream) => {
@@ -136,23 +135,21 @@ pub async fn proxy_directive<S>(
                                     get_header_len(&mut backend_stream, &mut backend_buf).await?;
 
                                 // Send the response headers back to the client
-                                socket
-                                    .write_all(&backend_buf[..header_len])
-                                    .await
-                                    .map_err(|e| CbltError::ResponseError {
+                                socket.write_all(&backend_buf[..header_len]).await.map_err(
+                                    |e| CbltError::ResponseError {
                                         details: e.to_string(),
                                         status_code: StatusCode::BAD_GATEWAY,
-                                    })?;
+                                    },
+                                )?;
 
                                 // If there's any body data already read, send it
                                 if backend_buf.len() > header_len {
-                                    socket
-                                        .write_all(&backend_buf[header_len..])
-                                        .await
-                                        .map_err(|e| CbltError::ResponseError {
+                                    socket.write_all(&backend_buf[header_len..]).await.map_err(
+                                        |e| CbltError::ResponseError {
                                             details: e.to_string(),
                                             status_code: StatusCode::BAD_GATEWAY,
-                                        })?;
+                                        },
+                                    )?;
                                 }
 
                                 let (mut backend_read_half, mut backend_write_half) =
@@ -165,7 +162,7 @@ pub async fn proxy_directive<S>(
                                         &mut client_read_half,
                                         &mut backend_write_half,
                                     )
-                                        .await;
+                                    .await;
                                     backend_write_half.shutdown().await.ok();
                                     result
                                 };
@@ -175,7 +172,7 @@ pub async fn proxy_directive<S>(
                                         &mut backend_read_half,
                                         &mut client_write_half,
                                     )
-                                        .await;
+                                    .await;
                                     client_write_half.shutdown().await.ok();
                                     result
                                 };
@@ -189,8 +186,8 @@ pub async fn proxy_directive<S>(
                                     _ => {
                                         return Err(CbltError::ResponseError {
                                             details:
-                                            "Failed to copy data between client and backend"
-                                                .to_string(),
+                                                "Failed to copy data between client and backend"
+                                                    .to_string(),
                                             status_code: StatusCode::BAD_GATEWAY,
                                         });
                                     }
@@ -298,8 +295,8 @@ use tokio::time::timeout;
 pub enum AliveState {
     Alive(u64), // timestamp
     Dead {
-        since: u64,       // timestamp when marked dead
-        retries_left: u64 // retries remaining
+        since: u64,        // timestamp when marked dead
+        retries_left: u64, // retries remaining
     },
 }
 #[derive(Debug, Clone)]
@@ -322,7 +319,11 @@ pub struct LiveBackend {
 
 impl ReverseProxyState {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub fn new(backends: Vec<String>, lb_policy: LoadBalancePolicy, options: ReverseProxyOptions) -> Result<Self, CbltError> {
+    pub fn new(
+        backends: Vec<String>,
+        lb_policy: LoadBalancePolicy,
+        options: ReverseProxyOptions,
+    ) -> Result<Self, CbltError> {
         let now_timestamp_seconds = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
@@ -360,10 +361,7 @@ impl ReverseProxyState {
 
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-    pub async fn get_next_backend(
-        &self,
-        addr: SocketAddr,
-    ) -> Result<LiveBackend, CbltError> {
+    pub async fn get_next_backend(&self, addr: SocketAddr) -> Result<LiveBackend, CbltError> {
         // Implement load balancing logic here
         match &self.lb_policy {
             LoadBalancePolicy::RoundRobin => {
@@ -382,7 +380,10 @@ impl ReverseProxyState {
                             *idx = (*idx + 1) % total_backends;
                             return Ok(live_backend);
                         }
-                        AliveState::Dead { since, retries_left } => {
+                        AliveState::Dead {
+                            since,
+                            retries_left,
+                        } => {
                             let now_timestamp_seconds = current_timestamp_seconds();
 
                             if now_timestamp_seconds > (*since + self.options.lb_interval) {
@@ -435,7 +436,10 @@ impl ReverseProxyState {
                                 backend_index: backend_idx as usize,
                             });
                         }
-                        AliveState::Dead { since, retries_left } => {
+                        AliveState::Dead {
+                            since,
+                            retries_left,
+                        } => {
                             let now_timestamp_seconds = current_timestamp_seconds();
                             if now_timestamp_seconds > (*since + self.options.lb_interval) {
                                 if *retries_left > 0 {
