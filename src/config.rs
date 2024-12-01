@@ -7,7 +7,6 @@ use kdl::{KdlDocument, KdlNode};
 use log::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
-use bollard::secret::ListSecretsOptions;
 use tokio::fs;
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -230,59 +229,6 @@ pub async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Se
     build_servers(config)
 }
 
-// #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-// pub async fn load_servers_from_docker(
-//     _args: Arc<Args>,
-// ) -> Result<HashMap<u16, Server>, CbltError> {
-//     use bollard::Docker;
-//     let docker = Docker::connect_with_local_defaults()?;
-//     use std::default::Default;
-//
-//     let filters: HashMap<String, Vec<String>> = HashMap::new();
-//     let options = Some(ListServicesOptions {
-//         filters,
-//         ..Default::default()
-//     });
-//
-//     let services = docker.list_services(options).await?;
-//     for service in &services {
-//         let mut service_name = None;
-//         if let Some(spec) = &service.spec {
-//             if let Some(labels) = &spec.labels {
-//                 for label_k in labels.keys() {
-//                     if label_k.starts_with("cblt.") && service_name.is_none() {
-//                         service_name =
-//                             Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
-//                         let containers = docker
-//                             .list_containers(Some(ListContainersOptions::<String> {
-//                                 all: false,
-//                                 filters: HashMap::new(),
-//                                 ..Default::default()
-//                             }))
-//                             .await?;
-//                         for container in &containers {
-//                             if let Some(names) = &container.names {
-//                                 match names.iter().find(|name| {
-//                                     name.starts_with(&format!("/{}.", service_name.unwrap()))
-//                                 }) {
-//                                     None => {}
-//                                     Some(name_all) => {
-//                                         let container_name = name_all.replace("/", "");
-//                                         println!("{container_name}");
-//                                     }
-//                                 }
-//                             } else {
-//                                 return Err(CbltError::ContainerNameNotFound);
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//
-//     Ok(HashMap::new())
-// }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn load_servers_from_docker(
