@@ -49,11 +49,11 @@ where
                             let range = parse_range_header(range_str, content_length)?;
 
                             let response =
-                                ranged_file_response(file, content_length, range).await?;
+                                ranged_file_response(file, &file_path, content_length, range).await?;
                             send_response_file(socket, response, request).await?;
                             Ok(StatusCode::PARTIAL_CONTENT)
                         } else {
-                            let response = file_response(file, content_length)?;
+                            let response = file_response(file, &file_path, content_length)?;
                             send_response_file(socket, response, request).await?;
                             Ok(StatusCode::OK)
                         }
@@ -77,12 +77,19 @@ async fn file_size(file: &File) -> Result<u64, CbltError> {
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-fn file_response(file: File, content_length: u64) -> Result<Response<File>, CbltError> {
+fn file_response(file: File, file_path: &PathBuf, content_length: u64) -> Result<Response<File>, CbltError> {
+    // Guess the MIME type based on the file extension
+    let mime_type = mime_guess::from_path(file_path)
+        .first_or_octet_stream()
+        .to_string();
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Length", content_length)
+        .header("Content-Type", mime_type)
         .body(file)?)
 }
+
+
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn sanitize_path(base_path: &Path, requested_path: &str) -> Option<PathBuf> {

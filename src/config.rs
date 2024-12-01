@@ -233,6 +233,7 @@ pub async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Se
     build_servers(config)
 }
 
+
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn load_servers_from_docker(
     _args: Arc<Args>,

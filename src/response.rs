@@ -4,6 +4,7 @@ use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
 use log::{debug, info};
 use std::fmt::Debug;
+use std::path::PathBuf;
 use std::pin;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -71,6 +72,7 @@ where
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn ranged_file_response(
     file: File,
+    file_path: &PathBuf,
     file_size: u64,
     range: (u64, u64),
 ) -> Result<Response<File>, CbltError> {
@@ -102,10 +104,14 @@ pub async fn ranged_file_response(
         .push_str(file_size.to_string().as_str())
         .map_err(|_| CbltError::HeaplessError {})?;
 
+    let mime_type = mime_guess::from_path(file_path)
+        .first_or_octet_stream()
+        .to_string();
     Ok(Response::builder()
         .status(StatusCode::PARTIAL_CONTENT)
         .header("Content-Length", content_length)
         .header("Content-Range", content_range.as_str())
+        .header("Content-Type", mime_type)
         .body(file)?)
 }
 
