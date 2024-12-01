@@ -91,10 +91,10 @@ curl -v -H "Range: bytes=0-499" http://127.0.0.1/logo.png
 ```kdl
 "*:80" {
     reverse_proxy "/http/*" "http://127.0.0.1:8080" "http://127.0.0.1:8081" {
-        health_uri "/health"
-        health_interval "10s"
-        health_timeout "2s"
-        lb_policy "round_robin"  //  "ip_hash"
+      lb_interval "60s"
+      lb_timeout "1s"
+      lb_retries "2"
+      lb_policy "round_robin"  //  "ip_hash"
     }
     root "*" "./assets"
     file_server
