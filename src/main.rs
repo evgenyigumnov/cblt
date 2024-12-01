@@ -1,15 +1,13 @@
-use crate::config::{build_config, Directive};
+use crate::config::{load_servers_from_docker, load_servers_from_config, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
-use clap::Parser;
-use kdl::KdlDocument;
+use clap::{Parser, ValueEnum};
 use log::{debug, error, info};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
-use tokio::fs;
 use tokio::runtime::Builder;
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -39,6 +37,15 @@ struct Args {
     /// Enable reload feature
     #[arg(long)]
     reload: bool,
+    /// Mode of operation (docker or config)
+    #[arg(long, default_value = "config", value_enum)]
+    mode: Mode, // Add the mode field
+}
+
+#[derive(ValueEnum, Clone, Debug, Eq, PartialEq)]
+enum Mode {
+    Docker,
+    Config,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -77,8 +84,13 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     let max_connections: usize = args.max_connections;
     info!("Max connections: {}", max_connections);
 
-    let servers: HashMap<u16, Server> = load_servers_from_config(args.clone()).await?;
+    let servers: HashMap<u16, Server> = if args.mode == Mode::Docker {
+        load_servers_from_docker(args.clone()).await?
+    } else {
+        load_servers_from_config(args.clone()).await?
+    };
 
+    #[cfg(debug_assertions)]
     debug!("{:#?}", servers);
     use tokio::sync::watch;
 
@@ -114,7 +126,18 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
         let reload_file_path = Path::new("reload");
 
         loop {
-            if reload_file_path.exists() {
+            if args.mode == Mode::Docker {
+                match load_servers_from_docker(args.clone()).await {
+                    Ok(servers) => {
+                        if let Err(err) = tx.send(servers) {
+                            error!("Error: {}", err);
+                        }
+                    }
+                    Err(err) => {
+                        error!("Error: {}", err);
+                    }
+                }
+            } else if reload_file_path.exists() {
                 match load_servers_from_config(args.clone()).await {
                     Ok(servers) => {
                         if let Err(err) = tx.send(servers) {
@@ -129,7 +152,7 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
                     }
                 }
             }
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
     });
 
@@ -138,15 +161,6 @@ async fn server(num_cpus: usize) -> anyhow::Result<()> {
     info!("CBLT stopped");
 
     Ok(())
-}
-
-#[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
-    let cbltfile_content = fs::read_to_string(&args.cfg).await?;
-    let doc: KdlDocument = cbltfile_content.parse()?;
-    let config = build_config(&doc)?;
-
-    build_servers(config)
 }
 
 pub struct ServerSupervisor {
@@ -213,6 +227,7 @@ fn build_servers(
         });
         let parsed_host = ParsedHost::from_str(&host);
         let port = parsed_host.port.unwrap_or(port);
+        #[cfg(debug_assertions)]
         debug!("Host: {}, Port: {}", host, port);
         let cert_path = cert_path;
 
@@ -244,8 +259,9 @@ fn build_servers(
 
 #[allow(dead_code)]
 pub fn only_in_debug() {
-    let _ =
-        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug")).try_init();
+    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug"))
+        .filter_module("bollard::docker", log::LevelFilter::Info)
+        .try_init();
 }
 
 #[allow(dead_code)]

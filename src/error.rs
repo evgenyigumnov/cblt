@@ -1,4 +1,5 @@
 use http::StatusCode;
+use humantime::DurationError;
 use rustls::pki_types;
 use thiserror::Error;
 
@@ -21,12 +22,6 @@ pub enum CbltError {
         #[from]
         source: std::io::Error,
     },
-    // from reqwest::Error
-    #[error("ReqwestError: {source:?}")]
-    ReqwestError {
-        #[from]
-        source: reqwest::Error,
-    },
     // from AcquireError
     #[error("AcquireError: {source:?}")]
     AcquireError {
@@ -39,6 +34,13 @@ pub enum CbltError {
         #[from]
         source: rustls::Error,
     },
+    // from bollard::errors::Error
+    #[error("BollardError: {source:?}")]
+    BollardError {
+        #[from]
+        source: bollard::errors::Error,
+    },
+
     // from pki_types::pem::Error
     #[error("PemError: {source:?}")]
     PemError {
@@ -63,8 +65,46 @@ pub enum CbltError {
         #[from]
         source: kdl::KdlError,
     },
+    // from SystemTimeError
+    #[error("SystemTimeError: {source:?}")]
+    SystemTimeError {
+        #[from]
+        source: std::time::SystemTimeError,
+    },
+    // from std::num::ParseIntError
+    #[error("ParseIntError: {source:?}")]
+    ParseIntError {
+        #[from]
+        source: std::num::ParseIntError,
+    },
+    // from DurationError
+    #[error("DurationError: {source:?}")]
+    DurationError {
+        #[from]
+        source: DurationError,
+    },
+
     #[error("KdlParseError: {details:?}")]
     KdlParseError { details: String },
     #[error("HeaplessError")]
     HeaplessError,
+    #[error("ServiceNameNotFound")]
+    ServiceNameNotFound,
+    #[error("ContainerNameNotFound")]
+    ContainerNameNotFound,
+    #[error("InvalidLabelFormat:  {details:?}")]
+    InvalidLabelFormat{
+        details: String
+    },
+    #[error("LabelNotFound:  {details:?}")]
+    LabelNotFound {
+        details: String
+    },
+    #[error("SecretSpecNotFound")]
+    SecretSpecNotFound,
+    #[error("SecretNameNotFound")]
+    SecretNameNotFound,
+    #[error("SecretDataNotFound")]
+    SecretDataNotFound,
 }
+

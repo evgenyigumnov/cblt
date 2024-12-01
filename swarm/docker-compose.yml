@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    image: ievkz/cblt:latest
+    networks:
+      - app
+    deploy:
+      mode: replicated
+      replicas: 3
+      labels:
+        - "cblt.hosts=*.domain.com, domain.org"
+        - "cblt.path=/api/*"
+        - "cblt.port=9000"
+        - "cblt.secrets=*.domain.com secret_key_2024 secret_cert_2024, domain.org secret_key_org_2024 secret_cert_org_2024"
+        - "cblt.lb_policy=round_robin"
+        - "cblt.lb_interval=2s"
+        - "cblt.lb_timeout=1s"
+        - "cblt.lb_retries=2"
+        - "cblt.lb_alive =/health"
+      restart_policy:
+        condition: on-failure
+    ports:
+      - "80:80"
+networks:
+  app:
+    external: true

@@ -4,7 +4,6 @@ use crate::error::CbltError;
 use std::collections::HashMap;
 
 use crate::reverse_proxy::ReverseProxyState;
-use humantime::Duration;
 use log::{error, info};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -38,11 +37,6 @@ pub struct SettingsLock {
 impl SettingsLock {
     #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
     async fn update(&self, s: Arc<ServerSettings>) {
-        for details in self.settings.read().await.hosts.values() {
-            for state in details.reverse_proxy_states.values() {
-                state.is_running_check.store(false, Ordering::SeqCst);
-            }
-        }
         let mut settings = self.settings.write().await;
         *settings = s;
     }
@@ -169,7 +163,6 @@ async fn init_proxy_states(
     directives: &Vec<Directive>,
 ) -> Result<HashMap<String, ReverseProxyState>, CbltError> {
     let mut reverse_proxy_states: HashMap<String, ReverseProxyState> = HashMap::new(); // (pattern -> ReverseProxyState)
-    let client_reqwest = reqwest::Client::new();
     for directive in directives {
         match directive {
             Directive::ReverseProxy {
@@ -183,28 +176,28 @@ async fn init_proxy_states(
                         .lb_policy
                         .clone()
                         .unwrap_or(LoadBalancePolicy::RoundRobin),
-                    client_reqwest.clone(),
-                );
+                    options.clone(),
+                )?;
 
-                if let Some(health_uri) = &options.health_uri {
-                    let interval = options
-                        .health_interval
-                        .as_deref()
-                        .unwrap_or("10s")
-                        .parse::<humantime::Duration>()
-                        .unwrap_or(Duration::from(std::time::Duration::from_secs(10)))
-                        .as_secs();
-                    let timeout = options
-                        .health_timeout
-                        .as_deref()
-                        .unwrap_or("2s")
-                        .parse::<humantime::Duration>()
-                        .unwrap_or(Duration::from(std::time::Duration::from_secs(2)))
-                        .as_secs();
-                    reverse_proxy_state
-                        .start_health_checks(health_uri.clone(), interval, timeout)
-                        .await;
-                }
+                // if let Some(health_uri) = &options.lb_retries {
+                //     let interval = options
+                //         .lb_interval
+                //         .as_deref()
+                //         .unwrap_or("10s")
+                //         .parse::<humantime::Duration>()
+                //         .unwrap_or(Duration::from(std::time::Duration::from_secs(10)))
+                //         .as_secs();
+                //     let timeout = options
+                //         .lb_timeout
+                //         .as_deref()
+                //         .unwrap_or("2s")
+                //         .parse::<humantime::Duration>()
+                //         .unwrap_or(Duration::from(std::time::Duration::from_secs(2)))
+                //         .as_secs();
+                //     reverse_proxy_state
+                //         .start_health_checks(health_uri.clone(), interval, timeout)
+                //         .await;
+                // }
                 reverse_proxy_states.insert(pattern.clone(), reverse_proxy_state);
             }
             _ => continue,

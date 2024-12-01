@@ -53,6 +53,7 @@ where
     socket.flush().await?;
 
     if gzip_supported {
+        #[cfg(debug_assertions)]
         debug!("Gzip supported");
         let gzip_stream = GzipEncoder::new(body);
         let mut gzip_reader = tokio::io::BufReader::new(gzip_stream);
