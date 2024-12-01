@@ -7,7 +7,6 @@ use kdl::{KdlDocument, KdlNode};
 use log::debug;
 use std::collections::HashMap;
 use std::sync::Arc;
-use bollard::secret::ListSecretsOptions;
 use tokio::fs;
 #[cfg(feature = "trace")]
 use tracing::instrument;
@@ -82,7 +81,6 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                             let destinations = args[1..].iter().map(|s| s.to_string()).collect();
 
                             let options = parse_reverse_proxy_options(child_node)?;
-
                             directives.push(Directive::ReverseProxy {
                                 pattern,
                                 destinations,
@@ -161,7 +159,12 @@ fn get_string_args<'a>(node: &'a KdlNode) -> Vec<&'a str> {
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, CbltError> {
-    let mut options = ReverseProxyOptions::default();
+    let mut options = ReverseProxyOptions{
+        lb_retries: 2,
+        lb_interval: 60,
+        lb_timeout: 1,
+        lb_policy: Some(LoadBalancePolicy::RoundRobin),
+    };
 
     if let Some(children) = node.children() {
         for child in children.nodes() {
@@ -229,60 +232,6 @@ pub async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Se
 
     build_servers(config)
 }
-
-// #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-// pub async fn load_servers_from_docker(
-//     _args: Arc<Args>,
-// ) -> Result<HashMap<u16, Server>, CbltError> {
-//     use bollard::Docker;
-//     let docker = Docker::connect_with_local_defaults()?;
-//     use std::default::Default;
-//
-//     let filters: HashMap<String, Vec<String>> = HashMap::new();
-//     let options = Some(ListServicesOptions {
-//         filters,
-//         ..Default::default()
-//     });
-//
-//     let services = docker.list_services(options).await?;
-//     for service in &services {
-//         let mut service_name = None;
-//         if let Some(spec) = &service.spec {
-//             if let Some(labels) = &spec.labels {
-//                 for label_k in labels.keys() {
-//                     if label_k.starts_with("cblt.") && service_name.is_none() {
-//                         service_name =
-//                             Some(spec.name.as_ref().ok_or(CbltError::ServiceNameNotFound)?);
-//                         let containers = docker
-//                             .list_containers(Some(ListContainersOptions::<String> {
-//                                 all: false,
-//                                 filters: HashMap::new(),
-//                                 ..Default::default()
-//                             }))
-//                             .await?;
-//                         for container in &containers {
-//                             if let Some(names) = &container.names {
-//                                 match names.iter().find(|name| {
-//                                     name.starts_with(&format!("/{}.", service_name.unwrap()))
-//                                 }) {
-//                                     None => {}
-//                                     Some(name_all) => {
-//                                         let container_name = name_all.replace("/", "");
-//                                         println!("{container_name}");
-//                                     }
-//                                 }
-//                             } else {
-//                                 return Err(CbltError::ContainerNameNotFound);
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//
-//     Ok(HashMap::new())
-// }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 pub async fn load_servers_from_docker(
