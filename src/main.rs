@@ -1,4 +1,4 @@
-use crate::config::{load_servers_from_docker, load_servers_from_config, Directive};
+use crate::config::{load_servers_from_config, load_servers_from_docker, Directive};
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
 use clap::{Parser, ValueEnum};

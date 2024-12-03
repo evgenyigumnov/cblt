@@ -159,7 +159,7 @@ fn get_string_args<'a>(node: &'a KdlNode) -> Vec<&'a str> {
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
 fn parse_reverse_proxy_options(node: &KdlNode) -> Result<ReverseProxyOptions, CbltError> {
-    let mut options = ReverseProxyOptions{
+    let mut options = ReverseProxyOptions {
         lb_retries: 2,
         lb_interval: 60,
         lb_timeout: 1,
@@ -233,11 +233,8 @@ pub async fn load_servers_from_config(args: Arc<Args>) -> Result<HashMap<u16, Se
     build_servers(config)
 }
 
-
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
-pub async fn load_servers_from_docker(
-    _args: Arc<Args>,
-) -> Result<HashMap<u16, Server>, CbltError> {
+pub async fn load_servers_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, Server>, CbltError> {
     use bollard::Docker;
     let docker = Docker::connect_with_local_defaults()?;
     use std::default::Default;
@@ -269,9 +266,10 @@ pub async fn load_servers_from_docker(
                         .await?;
                     for container in &containers {
                         if let Some(names) = &container.names {
-                            match names.iter().find(|name| {
-                                name.starts_with(&format!("/{}.", service_name))
-                            }) {
+                            match names
+                                .iter()
+                                .find(|name| name.starts_with(&format!("/{}.", service_name)))
+                            {
                                 None => {}
                                 Some(name_all) => {
                                     let container_name = name_all.replace("/", "");
@@ -284,25 +282,41 @@ pub async fn load_servers_from_docker(
                         }
                     }
 
-
                     // Process the labels
-                    let hosts_label = labels.get("cblt.hosts")
-                        .ok_or_else(|| CbltError::LabelNotFound{details: "cblt.hosts".to_string()})?;
-                    let path_label = labels.get("cblt.path")
-                        .ok_or_else(|| CbltError::LabelNotFound{details: "cblt.path".to_string()})?;
-                    let port_label = labels.get("cblt.port")
-                        .ok_or_else(|| CbltError::LabelNotFound{details: "cblt.port".to_string()})?;
+                    let hosts_label =
+                        labels
+                            .get("cblt.hosts")
+                            .ok_or_else(|| CbltError::LabelNotFound {
+                                details: "cblt.hosts".to_string(),
+                            })?;
+                    let path_label =
+                        labels
+                            .get("cblt.path")
+                            .ok_or_else(|| CbltError::LabelNotFound {
+                                details: "cblt.path".to_string(),
+                            })?;
+                    let port_label =
+                        labels
+                            .get("cblt.port")
+                            .ok_or_else(|| CbltError::LabelNotFound {
+                                details: "cblt.port".to_string(),
+                            })?;
 
                     let hosts_list: Vec<&str> = hosts_label.split(',').map(|s| s.trim()).collect();
                     let path = path_label.clone();
-                    let port = port_label.parse::<u16>()
-                        .map_err(|_| CbltError::InvalidLabelFormat{details:"cblt.port".to_string()})?;
+                    let port =
+                        port_label
+                            .parse::<u16>()
+                            .map_err(|_| CbltError::InvalidLabelFormat {
+                                details: "cblt.port".to_string(),
+                            })?;
 
                     // Collect secrets per host
                     let secrets_label = labels.get("cblt.secrets");
                     let secrets_map = if let Some(secrets_label) = secrets_label {
                         let mut map = HashMap::new();
-                        let secrets_entries: Vec<&str> = secrets_label.split(',').map(|s| s.trim()).collect();
+                        let secrets_entries: Vec<&str> =
+                            secrets_label.split(',').map(|s| s.trim()).collect();
                         for entry in secrets_entries {
                             let parts: Vec<&str> = entry.split_whitespace().collect();
                             if parts.len() == 3 {
@@ -311,7 +325,9 @@ pub async fn load_servers_from_docker(
                                 let cert = parts[2].to_string();
                                 map.insert(host.to_string(), (key, cert));
                             } else {
-                                return Err(CbltError::InvalidLabelFormat{details:"cblt.secrets".to_string()});
+                                return Err(CbltError::InvalidLabelFormat {
+                                    details: "cblt.secrets".to_string(),
+                                });
                             }
                         }
                         map
@@ -341,7 +357,9 @@ pub async fn load_servers_from_docker(
 
                     let lb_interval = if let Some(interval_str) = lb_interval_label {
                         humantime::parse_duration(interval_str)
-                            .map_err(|_| CbltError::InvalidLabelFormat{details: "cblt.lb_interval".to_string()})?
+                            .map_err(|_| CbltError::InvalidLabelFormat {
+                                details: "cblt.lb_interval".to_string(),
+                            })?
                             .as_secs()
                     } else {
                         10 // Default value
@@ -349,22 +367,23 @@ pub async fn load_servers_from_docker(
 
                     let lb_timeout = if let Some(timeout_str) = lb_timeout_label {
                         humantime::parse_duration(timeout_str)
-                            .map_err(|_| CbltError::InvalidLabelFormat{details: "cblt.lb_timeout".to_string()})?
+                            .map_err(|_| CbltError::InvalidLabelFormat {
+                                details: "cblt.lb_timeout".to_string(),
+                            })?
                             .as_secs()
                     } else {
                         1 // Default value
                     };
 
                     let lb_retries = if let Some(retries_str) = lb_retries_label {
-                        retries_str.parse::<u64>()
-                            .map_err(|_| CbltError::InvalidLabelFormat{details: "cblt.lb_retries".to_string()})?
+                        retries_str
+                            .parse::<u64>()
+                            .map_err(|_| CbltError::InvalidLabelFormat {
+                                details: "cblt.lb_retries".to_string(),
+                            })?
                     } else {
                         2 // Default value
                     };
-
-
-
-
 
                     let options = ReverseProxyOptions {
                         lb_retries,
@@ -374,41 +393,29 @@ pub async fn load_servers_from_docker(
                     };
 
                     // Build the ReverseProxy directive
-                    let destinations = destinations.iter().map(|s| format!("{}:{}", s, port)).collect();
+                    let destinations = destinations
+                        .iter()
+                        .map(|s| format!("{}:{}", s, port))
+                        .collect();
                     let reverse_proxy_directive = Directive::ReverseProxy {
                         pattern: path.clone(),
                         destinations,
                         options,
                     };
 
-                    let secrets = docker.list_secrets::<String>(
-                        None,
-                    ).await?;
                     // For each host, add the directives
                     for host in hosts_list {
-                        let host_directives = hosts.entry(host.to_string()).or_insert_with(Vec::new);
+                        let host_directives =
+                            hosts.entry(host.to_string()).or_insert_with(Vec::new);
                         host_directives.push(reverse_proxy_directive.clone());
 
                         // If there is a secret for this host, add the TLS directive
                         if let Some((key, cert)) = secrets_map.get(host) {
-                                  let mut key_data = None;
-                            let mut cert_data = None;
-                            for secret in &secrets {
-                                let spec = secret.clone().spec.ok_or(CbltError::SecretSpecNotFound)?;
-                                let name = spec.name.ok_or(CbltError::SecretNameNotFound)?;
-                                let data = spec.data.ok_or(CbltError::SecretDataNotFound)?;
-                                if &name == key {
-                                    key_data = Some(data.clone());
-                                }
-                                if &name == cert {
-                                    cert_data = Some(data);
-                                }
-                            }
-
-
+                            let key_data = Some(key.into());
+                            let cert_data = Some(cert.into());
                             host_directives.push(Directive::TlS {
                                 key: key_data.ok_or(CbltError::SecretDataNotFound)?,
-                                cert: cert_data.ok_or(CbltError::SecretDataNotFound)?
+                                cert: cert_data.ok_or(CbltError::SecretDataNotFound)?,
                             });
                         }
                     }
