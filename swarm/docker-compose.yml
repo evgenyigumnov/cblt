@@ -14,7 +14,7 @@ services:
         - "cblt.port=9000"
         - "cblt.secrets=domain.org secret_key_org_2024 secret_cert_org_2024"
         - "cblt.lb_policy=round_robin"
-        - "cblt.lb_interval=2s"
+        - "cblt.lb_interval=60s"
         - "cblt.lb_timeout=1s"
         - "cblt.lb_retries=2"
       restart_policy:
