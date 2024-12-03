@@ -405,8 +405,7 @@ pub async fn load_servers_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, S
 
                     // For each host, add the directives
                     for host in hosts_list {
-                        let host_directives =
-                            hosts.entry(host.to_string()).or_insert_with(Vec::new);
+                        let host_directives = hosts.entry(host.to_string()).or_default();
                         host_directives.push(reverse_proxy_directive.clone());
 
                         // If there is a secret for this host, add the TLS directive
