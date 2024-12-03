@@ -14,13 +14,16 @@ The name **Cblt** appears to be a good shortened version of **Cobalt**. It retai
   - **10 times faster than Nginx for small content under 100KB**
   - Range requests for static files
   - Gzip compression
+  - Mime types
+- Proxy requests to another server
+  - **Native Docker integration via labels**
+  - Load Balancer (Round Robin, IP Hash, **reactive health check on demand**)
+  - Websocket support
 - Reload configuration without restarting
 - TLS support
-- Proxy requests to another server
-    - Load Balancer (Round Robin, IP Hash, health checks)
-    - Websocket support
 - Redirects
 - KDL Document Language configuration (**Cbltfile**)
+
 
 ## Quick Start
 You can run Cblt with Cargo or Docker.
@@ -100,7 +103,39 @@ curl -v -H "Range: bytes=0-499" http://127.0.0.1/logo.png
     file_server
 }
 ```
-
+### Native Docker integration via labels
+docker-compose.yml (for backend)
+```yaml
+version: '3.8'
+services:
+  backend:
+    image: backend_image:version
+    networks:
+      - app
+    deploy:
+      mode: replicated
+      replicas: 3
+      labels:
+        - "cblt.hosts=domain.org"
+        - "cblt.path=/api/*"
+        - "cblt.port=9000"
+        - "cblt.lb_policy=round_robin"
+        - "cblt.lb_interval=60s"
+        - "cblt.lb_timeout=1s"
+        - "cblt.lb_retries=2"
+#        - "cblt.secrets=domain.org secret_key_org_2024 secret_cert_org_2024"
+      restart_policy:
+        condition: on-failure
+    ports:
+      - "9000:9000"
+networks:
+  app:
+    external: true
+```
+Launch CBLT in Docker integration mode
+```bash
+docker run -d -v /var/run/docker.sock:/var/run/docker.sock -p 80:80 -p 443:443 --restart unless-stopped --name cblt  -e MODE=docker ievkz/cblt
+```
 
 
 ## Benchmark

@@ -34,4 +34,8 @@ COPY ./Cbltfile ./etc/Cbltfile
 EXPOSE 80
 EXPOSE 443
 
-ENTRYPOINT ["sh", "-c", "ulimit -n 10000 && ./cblt --cfg ./etc/Cbltfile"]
+
+ENV MODE=config
+
+ENTRYPOINT ["sh", "-c", "ulimit -n 10000 && ./cblt --cfg ./etc/Cbltfile --mode=${MODE}"]
+
