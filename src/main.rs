@@ -11,9 +11,9 @@ use std::sync::Arc;
 use tokio::runtime::Builder;
 #[cfg(feature = "trace")]
 use tracing::instrument;
-use tracing::Level;
-use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::fmt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 mod config;
 mod directive;
 mod error;
@@ -50,10 +50,9 @@ enum Mode {
 
 fn main() -> anyhow::Result<()> {
     fdlimit::raise_fd_limit()?;
-    #[cfg(debug_assertions)]
-    only_in_debug();
     #[cfg(not(debug_assertions))]
-    only_in_production();
+    init_logging();
+
     let num_cpus = std::thread::available_parallelism()?.get();
     let runtime = Builder::new_multi_thread()
         .worker_threads(num_cpus)
@@ -258,21 +257,13 @@ fn build_servers(
 }
 
 #[allow(dead_code)]
-pub fn only_in_debug() {
-    let _ = env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("debug"))
-        .filter_module("bollard::docker", log::LevelFilter::Info)
-        .try_init();
-}
+fn init_logging() {
+    let file_appender = tracing_appender::rolling::daily("/var/log/clbt", "server.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-#[allow(dead_code)]
-fn only_in_production() {
-    let _ =
-        env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).try_init();
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE) // Set the maximum log level
-        .with_span_events(FmtSpan::CLOSE)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_writer(non_blocking))
+        .init();
 }
 
 #[cfg_attr(feature = "trace", instrument(level = "trace", skip_all))]
