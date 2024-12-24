@@ -26,6 +26,10 @@ pub enum Directive {
     Redir {
         destination: String,
     },
+    RedirIfNotCookie {
+        cookiename: String,
+        destination: String,
+    },
     TlS {
         cert: String,
         key: String,
@@ -106,6 +110,22 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                             });
                         }
                     }
+                    "redirifnotcookie" => {
+                        let args = get_string_args(child_node);
+                        if !args.is_empty() {
+                            let cookiename = args[0].to_string();
+                            let destination = args[1].to_string();
+                            directives.push(Directive::RedirIfNotCookie {
+                                cookiename,
+                                destination,
+                            });
+                        } else {
+                            return Err(CbltError::KdlParseError {
+                                details: format!("Invalid 'redir' directive for host {}", hostname),
+                            });
+                        }
+                    }
+
                     "tls" => {
                         let args = get_string_args(child_node);
                         if args.len() >= 2 {
