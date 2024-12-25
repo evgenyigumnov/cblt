@@ -13,3 +13,8 @@
     file_server
     tls "domain.crt" "domain.key"
 }
+"*:8082" {
+    root "*" "./book"
+    redirifnotcookie "_oauth2_proxy" "/oauth2/start"
+    file_server
+}

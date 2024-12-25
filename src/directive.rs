@@ -172,6 +172,7 @@ where
                             .status(StatusCode::FOUND)
                             .header("Location", &dest)
                             .body(BytesMut::new())?; // Empty body for redirects?
+                                                     //
                         match send_response(socket, response).await {
                             Ok(_) => {
                                 log_request_response(&request, StatusCode::FOUND);
@@ -183,6 +184,44 @@ where
                             }
                         }
                     }
+                    Directive::RedirIfNotCookie {
+                        cookiename,
+                        destination,
+                    } => {
+                        let dest = destination.replace("{uri}", request.uri().path());
+                        let response = Response::builder()
+                            .status(StatusCode::FOUND)
+                            .header("Location", &dest)
+                            .body(BytesMut::new())?; // Empty body for redirects?
+                                                     //
+                        let cookies = match request.headers().get("Cookie") {
+                            Some(cookies) => cookies.to_str().unwrap_or(""),
+                            None => "",
+                        };
+
+                        match cookies
+                            .split(';')
+                            .collect::<Vec<&str>>()
+                            .iter()
+                            .find(|&x| x.contains(cookiename))
+                        {
+                            Some(_) => debug!("Cookie found: {}", cookiename),
+                            None => match send_response(socket, response).await {
+                                Ok(_) => {
+                                    log_request_response(&request, StatusCode::FOUND);
+                                    return Ok(());
+                                }
+                                Err(err) => {
+                                    log_request_response(
+                                        &request,
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                    );
+                                    return Err(err);
+                                }
+                            },
+                        };
+                    }
+
                     Directive::TlS { .. } => {}
                 }
             }
