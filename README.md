@@ -61,24 +61,26 @@ curl -v -H "Range: bytes=0-499" http://127.0.0.1/logo.png
 
 ## "Cbltfile" configuration examples
 ### File server
+Supports SPA (Single Page Application): fall back to /index.html if not found in /path/to/folder
 ```kdl
 "*:80" {
-    root "*" "/path/to/folder"
+    root "*" "/path/to/folder" "/index.html"
     file_server
 }
 ```
+
 ### File server & Proxy
 ```kdl
 "127.0.0.1:8080" {
     reverse_proxy "/test-api/*" "http://10.8.0.3:80"
-    root "*" "/path/to/folder"
+    root "*" "/path/to/folder" "/index.html"
     file_server
 }
 ```
 ### TLS support ([docs](https://github.com/evgenyigumnov/cblt/blob/main/tls.md))
 ```kdl
 "example.com" {
-    root "*" "/path/to/folder"
+    root "*" "/path/to/folder" "/index.html"
     file_server
     tls "/path/to/your/domain.crt" "/path/to/your/domain.key"
 }
@@ -99,7 +101,7 @@ curl -v -H "Range: bytes=0-499" http://127.0.0.1/logo.png
       lb_retries "2"
       lb_policy "round_robin"  //  "ip_hash"
     }
-    root "*" "./assets"
+    root "*" "./assets" "index.html"
     file_server
 }
 ```
