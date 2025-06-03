@@ -16,6 +16,7 @@ pub enum Directive {
     Root {
         pattern: String,
         path: String,
+        fallback: Option<String>, // fallback file path
     },
     FileServer,
     ReverseProxy {
@@ -68,7 +69,12 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                         if args.len() >= 2 {
                             let pattern = args[0].to_string();
                             let path = args[1].to_string();
-                            directives.push(Directive::Root { pattern, path });
+                            let fallback = if args.len() >= 3 {
+                                Some(args[2].to_string())
+                            } else {
+                                None
+                            };
+                            directives.push(Directive::Root { pattern, path, fallback });
                         } else {
                             return Err(CbltError::KdlParseError {
                                 details: format!("Invalid 'root' directive for host {}", hostname),

@@ -64,20 +64,27 @@ where
             };
 
             let mut root_path: Option<&str> = None;
+            let mut fallback_file: Option<&str> = None;
 
             for directive in &host_config.directives {
                 match directive {
-                    Directive::Root { pattern, path } => {
+                    Directive::Root { pattern, path, fallback } => {
                         #[cfg(debug_assertions)]
                         debug!("Root: {} -> {}", pattern, path);
                         if matches_pattern(pattern.as_str(), request.uri().path()) {
                             root_path = Some(path.as_str());
+                            fallback_file = fallback.as_deref();
                         }
                     }
                     Directive::FileServer => {
                         #[cfg(debug_assertions)]
-                        debug!("File server");
-                        let ret = file_server::file_directive(root_path, &request, socket).await;
+                        debug!("File server with fallback: {:?}", fallback_file);
+                        let ret = file_server::file_directive(
+                            root_path.as_deref(), 
+                            fallback_file, 
+                            &request, 
+                            socket
+                        ).await;
                         match ret {
                             Ok(_) => {
                                 log_request_response(&request, StatusCode::OK);

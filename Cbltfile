@@ -5,7 +5,7 @@
       lb_retries "2"
       lb_policy "round_robin"  //  "ip_hash"
 }
-    root "*" "./assets"
+    root "*" "./assets" "/index.html"
     file_server
 }
 "*:443" {
