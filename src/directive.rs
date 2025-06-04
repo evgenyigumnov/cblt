@@ -68,7 +68,11 @@ where
 
             for directive in &host_config.directives {
                 match directive {
-                    Directive::Root { pattern, path, fallback } => {
+                    Directive::Root {
+                        pattern,
+                        path,
+                        fallback,
+                    } => {
                         #[cfg(debug_assertions)]
                         debug!("Root: {} -> {}", pattern, path);
                         if matches_pattern(pattern.as_str(), request.uri().path()) {
@@ -80,11 +84,12 @@ where
                         #[cfg(debug_assertions)]
                         debug!("File server with fallback: {:?}", fallback_file);
                         let ret = file_server::file_directive(
-                            root_path.as_deref(), 
-                            fallback_file, 
-                            &request, 
-                            socket
-                        ).await;
+                            root_path.as_deref(),
+                            fallback_file,
+                            &request,
+                            socket,
+                        )
+                        .await;
                         match ret {
                             Ok(_) => {
                                 log_request_response(&request, StatusCode::OK);

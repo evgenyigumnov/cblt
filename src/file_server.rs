@@ -36,28 +36,33 @@ where
 
                 // try to open the requested file
                 let file_result = File::open(&file_path).await;
-                
-                let (file, final_path) = match file_result {
-                    Ok(file) => (file, file_path),
-                    Err(_) => {
-                        // if it fails, check for the fallback file
-                        if let Some(fallback) = fallback_file {
-                            let fallback_path = Path::new(root).join(fallback.trim_start_matches('/'));
-                            match File::open(&fallback_path).await {
-                                Ok(fallback_file) => (fallback_file, fallback_path),
-                                Err(err) => return Err(CbltError::ResponseError {
-                                    details: format!("Neither requested file nor fallback file found: {}", err),
+
+                let (file, final_path) =
+                    match file_result {
+                        Ok(file) => (file, file_path),
+                        Err(_) => {
+                            // if it fails, check for the fallback file
+                            if let Some(fallback) = fallback_file {
+                                let fallback_path =
+                                    Path::new(root).join(fallback.trim_start_matches('/'));
+                                match File::open(&fallback_path).await {
+                                    Ok(fallback_file) => (fallback_file, fallback_path),
+                                    Err(err) => return Err(CbltError::ResponseError {
+                                        details: format!(
+                                            "Neither requested file nor fallback file found: {}",
+                                            err
+                                        ),
+                                        status_code: StatusCode::NOT_FOUND,
+                                    }),
+                                }
+                            } else {
+                                return Err(CbltError::ResponseError {
+                                    details: "File not found".to_string(),
                                     status_code: StatusCode::NOT_FOUND,
-                                }),
+                                });
                             }
-                        } else {
-                            return Err(CbltError::ResponseError {
-                                details: "File not found".to_string(),
-                                status_code: StatusCode::NOT_FOUND,
-                            });
                         }
-                    }
-                };
+                    };
 
                 let content_length = file_size(&file).await?;
 
@@ -73,8 +78,7 @@ where
                     let range = parse_range_header(range_str, content_length)?;
 
                     let response =
-                        ranged_file_response(file, &final_path, content_length, range)
-                            .await?;
+                        ranged_file_response(file, &final_path, content_length, range).await?;
                     send_response_file(socket, response, request).await?;
                     Ok(StatusCode::PARTIAL_CONTENT)
                 } else {
