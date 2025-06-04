@@ -74,7 +74,11 @@ pub fn build_config(doc: &KdlDocument) -> Result<HashMap<String, Vec<Directive>>
                             } else {
                                 None
                             };
-                            directives.push(Directive::Root { pattern, path, fallback });
+                            directives.push(Directive::Root {
+                                pattern,
+                                path,
+                                fallback,
+                            });
                         } else {
                             return Err(CbltError::KdlParseError {
                                 details: format!("Invalid 'root' directive for host {}", hostname),
