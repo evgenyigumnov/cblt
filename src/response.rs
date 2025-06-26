@@ -2,7 +2,7 @@ use crate::error::CbltError;
 use async_compression::tokio::write::GzipEncoder;
 use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
-use log::{debug, info};
+use log::info;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::pin;

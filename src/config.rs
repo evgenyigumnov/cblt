@@ -1,8 +1,7 @@
 use crate::error::CbltError;
 use crate::server::Server;
 use crate::{build_servers, Args};
-use bollard::container::ListContainersOptions;
-use bollard::service::ListServicesOptions;
+use bollard::query_parameters::{ListContainersOptions, ListServicesOptions};
 use kdl::{KdlDocument, KdlNode};
 use log::debug;
 use std::collections::HashMap;
@@ -269,8 +268,8 @@ pub async fn load_servers_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, S
     let docker = Docker::connect_with_local_defaults()?;
     use std::default::Default;
 
-    let options = Some(ListServicesOptions::<String> {
-        filters: HashMap::new(),
+    let options = Some(ListServicesOptions {
+        filters: Some(HashMap::new()),
         ..Default::default()
     });
 
@@ -288,9 +287,9 @@ pub async fn load_servers_from_docker(_args: Arc<Args>) -> Result<HashMap<u16, S
                     let service_name = spec.name.ok_or(CbltError::ServiceNameNotFound)?;
                     let mut destinations: Vec<String> = Vec::new();
                     let containers = docker
-                        .list_containers(Some(ListContainersOptions::<String> {
+                        .list_containers(Some(ListContainersOptions {
                             all: false,
-                            filters: HashMap::new(),
+                            filters: Some(HashMap::new()),
                             ..Default::default()
                         }))
                         .await?;
