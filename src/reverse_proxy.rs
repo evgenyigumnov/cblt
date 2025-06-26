@@ -1,7 +1,7 @@
 use crate::{matches_pattern, CbltError};
 use bytes::BytesMut;
 use http::{Request, StatusCode};
-use log::debug;
+#[cfg(debug_assertions)]
 use log::error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "trace")]
@@ -100,15 +100,15 @@ where
                                         backend_stream_result = Ok(stream);
                                         break;
                                     }
-                                    Err(e) => {
+                                    Err(_e) => {
                                         #[cfg(debug_assertions)]
-                                        error!("Failed to connect to backend: {}", e);
+                                        error!("Failed to connect to backend: {}", _e);
                                         retries -= 1;
                                     }
                                 },
-                                Err(e) => {
+                                Err(_e) => {
                                     #[cfg(debug_assertions)]
-                                    error!("Connection to backend timed out: {}", e);
+                                    error!("Connection to backend timed out: {}", _e);
                                     retries -= 1;
                                 }
                             }

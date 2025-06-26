@@ -2,7 +2,7 @@ use crate::config::{load_servers_from_config, load_servers_from_docker, Directiv
 use crate::error::CbltError;
 use crate::server::{Server, ServerWorker};
 use clap::{Parser, ValueEnum};
-use log::{debug, error, info};
+use log::{error, info};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::path::Path;

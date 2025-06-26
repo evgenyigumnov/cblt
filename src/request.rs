@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use http::Version;
 use http::{Request, StatusCode};
 use httparse::Status;
+#[cfg(debug_assertions)]
 use log::error;
 use std::str;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -140,9 +141,9 @@ where
             }
         }
         Ok(Status::Partial) => Ok(None),
-        Err(err) => {
+        Err(_err) => {
             #[cfg(debug_assertions)]
-            error!("Error: {}", err);
+            error!("Error: {}", _err);
             Ok(None)
         }
     }

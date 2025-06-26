@@ -6,7 +6,7 @@ use crate::server::ServerSettings;
 use crate::{file_server, matches_pattern, reverse_proxy};
 use bytes::BytesMut;
 use http::{Response, StatusCode};
-use log::{debug, error};
+use log::debug;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -128,7 +128,9 @@ where
                         break;
                     }
                     Directive::ReverseProxy {
+                        #[cfg(debug_assertions)]
                         pattern,
+                        #[cfg(debug_assertions)]
                         destinations,
                         ..
                     } => {

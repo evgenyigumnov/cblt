@@ -233,7 +233,7 @@ async fn init_server(
                     let acceptor = settings.tls_acceptor.clone();
                     match acceptor.as_ref() {
                         None => {
-                            if let Err(err) = directive_process(
+                            if let Err(_err) = directive_process(
                                 &mut stream,
                                 settings.clone(),
                                 addr,
@@ -241,12 +241,12 @@ async fn init_server(
                             .await
                             {
                                 #[cfg(debug_assertions)]
-                                error!("Error: {}", err);
+                                error!("Error: {}", _err);
                             }
                         }
                         Some(acceptor) => match acceptor.accept(stream).await {
                             Ok(mut stream) => {
-                                if let Err(err) = directive_process(
+                                if let Err(_err) = directive_process(
                                     &mut stream,
                                     settings.clone(),
                                     addr,
@@ -254,12 +254,12 @@ async fn init_server(
                                 .await
                                 {
                                     #[cfg(debug_assertions)]
-                                    error!("Error: {}", err);
+                                    error!("Error: {}", _err);
                                 }
                             }
-                            Err(err) => {
+                            Err(_err) => {
                                 #[cfg(debug_assertions)]
-                                error!("TLS Error: {}", err);
+                                error!("TLS Error: {}", _err);
                             }
                         },
                     }
